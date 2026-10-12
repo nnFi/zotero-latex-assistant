@@ -23,6 +23,7 @@ export interface BibliographyUpdatePlan {
   readonly bibliography: string;
   readonly itemKeys: readonly string[];
   readonly citationKeys: Readonly<Record<string, string>>;
+  readonly sourceCitationKeys: Readonly<Record<string, string>>;
   readonly trackedItemKeys: readonly string[];
   readonly newItemKeys: readonly string[];
   readonly pendingItemKeys: readonly string[];
@@ -85,7 +86,9 @@ export function planBibliographyUpdate(input: BibliographyUpdateInput, itemKeys 
     if (entry) preserved.set(key, bibliography.slice(entry.entryStart, entry.entryEnd));
     else pending.push(key);
   }
-  return { config, bibliography, itemKeys: [...itemKeys], citationKeys: mapping, trackedItemKeys: [...tracked],
+  const sourceCitationKeys = Object.fromEntries([...input.items, ...selection ?? [], ...synchronize?.shown ?? []]
+    .filter((item) => item.citationKey).map((item) => [item.key, item.citationKey!]));
+  return { config, bibliography, itemKeys: [...itemKeys], citationKeys: mapping, sourceCitationKeys, trackedItemKeys: [...tracked],
     newItemKeys: itemKeys.filter((key) => !Object.hasOwn(mapping, key)), pendingItemKeys: pending, preservedExports: preserved,
     uncheckedCitationKeys: unchecked, replacedCitationKeys: replaced,
     occupiedCitationKeys: new Set([...entries.keys()].filter((key) => !replaced.has(key))) };
@@ -122,7 +125,7 @@ export function completeBibliographyUpdate(plan: BibliographyUpdatePlan, exports
   };
   for (const key of plan.newItemKeys) {
     const providerKey = exportedKey(key);
-    reserveCitationKey(mapping, key, preferredKeys ? preferredKeys[key]! : providerKey, plan.occupiedCitationKeys);
+    reserveCitationKey(mapping, key, plan.sourceCitationKeys[key] ?? (preferredKeys ? preferredKeys[key]! : providerKey), plan.occupiedCitationKeys);
   }
   const hasReferences = bibliographyExportsHaveReferences(plan, exports);
   const aliases = new Map<string, string>();

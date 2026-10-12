@@ -30,11 +30,16 @@ export function reserveCitationKey(mapping: Record<string, string>, key: string,
   mapping[key] = value;
 }
 
+/** Shared parsing keeps metadata reads, creation and update collision checks consistent. */
+export function extraCitationKeys(extra: string): string[] {
+  return [...extra.matchAll(/^\s*Citation Key\s*:\s*(.*?)\s*$/gmi)].map((entry) => entry[1]!);
+}
+
 export function pinnedCitationKeyExtra(extra: string, key: string): string {
   validateCitationKey(key);
-  const existing = [...extra.matchAll(/^\s*Citation Key\s*:\s*(.*?)\s*$/gmi)];
+  const existing = extraCitationKeys(extra);
   if (existing.length) {
-    if (existing.some((entry) => entry[1] !== key)) throw new Error("A different Citation Key has been set in Zotero. It was not overwritten.");
+    if (existing.some((entry) => entry !== key)) throw new Error("A different Citation Key has been set in Zotero. It was not overwritten.");
     return extra;
   }
   return `${extra}${extra && !/[\r\n]$/.test(extra) ? "\n" : ""}Citation Key: ${key}`;

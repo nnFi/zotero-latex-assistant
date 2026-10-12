@@ -7,6 +7,8 @@ mcp/**
 test/**
 dist/test/**
 dist/mcp/**
+!dist/mcp/server.cjs
+!dist/mcp/server.cjs.map
 node_modules/**
 tsconfig.json
 tsconfig.webview.json
@@ -16,3 +18,8 @@ PROJEKTSTATUS.md
 docs/**
 **/*.log
 .env*
+dist/src/**
+!docs/MCP.md
+!docs/mcp-smoke-report.json
+
+!docs/pdf-handoff-smoke-report.json

@@ -33,6 +33,20 @@ test("Single-source imports preserve unrelated manual fields while full refreshe
   assert.equal(refresh.preservedExports.size, 0);
 });
 
+test("A fixed key stored by the MCP survives native exports with another generated key and later metadata refreshes", () => {
+  const source = { ...third, citationKey: "mcpFixed2026" };
+  const plan = planBibliographyUpdate({ config, bibliography, presence, items: [first, second, source], selection: [source] });
+  const exports = new Map([...plan.preservedExports, [third.key, '@book{NativeGenerated,title={Imported source}}']]);
+  const result = completeBibliographyUpdate(plan, exports, { ITEM0003: "AnotherProviderKey" });
+  assert.equal(result.config.citationKeys?.ITEM0003, "mcpFixed2026");
+  assert.match(result.text, /@book\{mcpFixed2026,/);
+  const refresh = planBibliographyUpdate({ config: result.config, bibliography: result.text,
+    presence: { itemKeys: result.config.importedItemKeys, citationKeys: result.config.citationKeys! },
+    items: [first, second, { ...source, citationKey: "changedInZotero" }], selection: [source] });
+  const refreshed = completeBibliographyUpdate(refresh, new Map([...refresh.preservedExports, [third.key, '@book{ChangedNative,title={Corrected source}}']]));
+  assert.equal(refreshed.config.citationKeys?.ITEM0003, "mcpFixed2026");
+});
+
 test("Synchronization removes unchecked sources and references but retains sources outside the shown collection", () => {
   const tracked = { ...config, importedItemKeys: [...config.importedItemKeys, third.key],
     citationKeys: { ...config.citationKeys, ITEM0003: "OutsideCollection" } };

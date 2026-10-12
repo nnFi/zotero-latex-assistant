@@ -62,6 +62,7 @@ function list(root: string, bbtKey?: string | (() => string), options: { serverI
     onDidCreate: subscription, onDidDelete: subscription, dispose() {} }) },
     window: { createWebviewPanel: () => { const panel = createPanel(); panels.push(panel); return panel; }, showInformationMessage() {}, showErrorMessage(message: string) { errors.push(message); } },
     commands: { registerCommand: (name: string, callback: (selection?: unknown) => Promise<void>) => { commands.set(name, callback); return subscription(); } },
+    Uri: { joinPath: (base: { fsPath: string }, ...parts: string[]) => ({ fsPath: path.join(base.fsPath, ...parts) }) },
     ViewColumn: { Active: 1 }, RelativePattern: class {} };
   const filename = path.join(__dirname, "../src/views/sourceList.js");
   const nativeRequire = createRequire(filename);
@@ -73,7 +74,7 @@ function list(root: string, bbtKey?: string | (() => string), options: { serverI
   const imports: string[][] = [];
   const projects = { folder: async () => folder, run: async (action: () => Promise<void>) => action(), log() {},
     synchronizeItems: async (items: readonly ZoteroItem[]) => { imports.push(Array.from(items, (item) => item.key)); } };
-  module.exports.registerSourceList({ subscriptions: [] } as never, projects as never,
+  module.exports.registerSourceList({ subscriptions: [], extensionUri: { fsPath: path.resolve(__dirname, "../..") } } as never, projects as never,
     { citeWithDetails: async () => { throw new ZoteroError("CANCELLED", "Export cancelled"); } } as never);
   return { open: () => commands.get("zoteroLatexAssistant.openSourceList")!(), get panel() { return panels.at(-1)!; }, panels, calls, imports, errors, messages,
     change: async (file = "refs.bib") => { for (const listener of changeListeners) await listener({ fsPath: path.join(root, file) }); },

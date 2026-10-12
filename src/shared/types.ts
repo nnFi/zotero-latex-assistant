@@ -36,6 +36,7 @@ export interface ZoteroItem {
   readonly creators: readonly ZoteroCreator[];
   readonly date: string;
   readonly doi: string;
+  readonly isbn?: string;
   readonly url: string;
   readonly citationKey?: string;
 }

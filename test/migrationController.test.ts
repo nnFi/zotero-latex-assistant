@@ -15,18 +15,18 @@ const config: ProjectConfig = { version: 1, library: { type: "user", id: 0 }, co
   citationStyle: "authoryear", citationCommand: "autocite", importedItemKeys: ["ITEM0001"], citationKeys: { ITEM0001: "Old2024" } };
 const manuscript = "% \\cite{Old2024} is only an example\n\\autocite[Old2024][12]{Old2024}\n";
 
-async function inProject(action: (root: string, original: string) => Promise<void>): Promise<void> {
+async function inProject(action: (root: string, original: string) => Promise<void>, initialManuscript = manuscript): Promise<void> {
   const root = await mkdtemp(path.join(tmpdir(), "migration-controller-"));
   try {
     await saveProjectConfig(root, config);
     const original = mergeBibliography("", ["@book{Old2024,title={Manual field contents},year=2024}"]);
     await writeFile(path.join(root, config.bibFile), original);
-    await writeFile(path.join(root, "main.tex"), manuscript);
+    await writeFile(path.join(root, "main.tex"), initialManuscript);
     await action(root, original);
   } finally { await rm(root, { recursive: true, force: true }); }
 }
 
-function controller(root: string, options: { confirm?: boolean; dirty?: string; mode?: "manual" | "bbt"; target?: string; duringReview?: () => Promise<void> } = {}) {
+function controller(root: string, options: { confirm?: boolean; dirty?: string; mode?: "manual" | "bbt"; target?: string; duringReview?: () => Promise<void>; manuscript?: string } = {}) {
   const folder = { uri: { scheme: "file", fsPath: root, toString: () => root }, name: "Project" };
   const commands = new Map<string, () => Promise<void>>();
   const errors: string[] = [];
@@ -56,7 +56,7 @@ function controller(root: string, options: { confirm?: boolean; dirty?: string; 
       showTextDocument: async (uri: { fsPath: string }) => { previews.push(uri.fsPath); },
       showWarningMessage: async () => {
         assert.equal((await readProjectConfig(root))?.citationKeys?.ITEM0001, "Old2024", "Confirmation must precede all source edits");
-        assert.equal(await readFile(path.join(root, "main.tex"), "utf8"), manuscript);
+        assert.equal(await readFile(path.join(root, "main.tex"), "utf8"), options.manuscript ?? manuscript);
         assert.ok(previews.length, "The reviewable preview must be open before confirmation");
         await options.duringReview?.();
         return options.confirm ? "Migrate keys" : undefined;
@@ -92,6 +92,23 @@ test("Confirmed migration updates actual .bib, config and LaTeX files and backs 
     assert.deepEqual(JSON.parse(await readFile(path.join(root, ".zotero/backups", backup, CONFIG_FILE), "utf8")), config);
     assert.match(await readFile(command.previews[0]!, "utf8"), /Old2024 → New2025/);
   });
+});
+
+test("Confirmed alias migration saves both alias citations and their definition together and backs up the original manuscript", async () => {
+  const aliases = "\\defcitealias{Old2024}{Study I}\n\\citetalias{Old2024} and \\citepalias{Old2024}\n";
+  await inProject(async (root, original) => {
+    const command = controller(root, { confirm: true, manuscript: aliases });
+    await command.run();
+    assert.deepEqual(command.errors, []);
+    assert.deepEqual((await readProjectConfig(root))?.citationKeys, { ITEM0001: "New2025" });
+    assert.deepEqual(bibEntries(await readFile(path.join(root, config.bibFile), "utf8")).map((entry) => entry.key), ["New2025"]);
+    assert.equal(await readFile(path.join(root, "main.tex"), "utf8"),
+      "\\defcitealias{New2025}{Study I}\n\\citetalias{New2025} and \\citepalias{New2025}\n");
+    const backup = (await readdir(path.join(root, ".zotero/backups"))).find((file) => file.startsWith("migration-"))!;
+    assert.equal(await readFile(path.join(root, ".zotero/backups", backup, "main.tex"), "utf8"), aliases);
+    assert.equal(await readFile(path.join(root, ".zotero/backups", backup, config.bibFile), "utf8"), original);
+    assert.match(await readFile(command.previews[0]!, "utf8"), /3 citation\/bibliography reference\(s\)/);
+  }, aliases);
 });
 
 test("Cancelled migration leaves the source files and mapping unchanged while retaining its preview", async () => {

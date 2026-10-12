@@ -2,7 +2,7 @@ import { ZoteroError } from "../shared/errors";
 import type { LibraryRef, ZoteroAttachment, ZoteroCollection, ZoteroConnectionInfo, ZoteroItem, ZoteroItemDetail, ZoteroLibrary } from "../shared/types";
 import { collectionsPath, parseCollection } from "./collections";
 import { itemsPath, parseItem } from "./items";
-import { isRecord, libraryPrefix, validateKey } from "./validation";
+import { isRecord, isTrashedData, libraryPrefix, validateKey } from "./validation";
 import { coordinatorFor, type RequestCoordinator } from "./requestCoordinator";
 import { parseAttachment } from "./attachments";
 
@@ -125,6 +125,46 @@ export class ZoteroClient {
     return this.readPagedList(itemsPath(library, collectionKey), (value) => parseItem(value, library));
   }
 
+  async getCollection(library: LibraryRef, key: string): Promise<ZoteroCollection> {
+    const collection = parseCollection(await this.readJson(await this.request(
+      `${libraryPrefix(library)}/collections/${validateKey(key)}?format=json`)), library);
+    if (collection.key !== key) throw new ZoteroError("INVALID_RESPONSE", "Zotero returned a different collection.");
+    return collection;
+  }
+
+  async searchItems(library: LibraryRef, collectionKey: string | undefined, query: string): Promise<readonly ZoteroItem[]> {
+    return this.readPagedList(`${itemsPath(library, collectionKey)}?${new URLSearchParams({ q: query, qmode: "everything" })}`,
+      (value) => parseItem(value, library));
+  }
+
+  async itemTemplate(itemType: string): Promise<Record<string, unknown>> {
+    // The local API exposes itemTypeFields, but not the Web API's items/new endpoint.
+    const fields = await this.readJson(await this.request(`itemTypeFields?${new URLSearchParams({ itemType })}`));
+    if (!Array.isArray(fields) || !fields.length || fields.some((entry) => !isRecord(entry) || typeof entry.field !== "string")) {
+      throw new ZoteroError("INVALID_RESPONSE", "Invalid Zotero item fields.");
+    }
+    return { itemType, ...Object.fromEntries(fields.map((entry: { field: string }) => [entry.field, ""])) };
+  }
+
+  async creatorTypes(itemType: string): Promise<string[]> {
+    const types = await this.readJson(await this.request(`itemTypeCreatorTypes?${new URLSearchParams({ itemType })}`));
+    if (!Array.isArray(types) || types.some((entry) => !isRecord(entry) || typeof entry.creatorType !== "string")) {
+      throw new ZoteroError("INVALID_RESPONSE", "Invalid Zotero creator types.");
+    }
+    return types.map((entry: { creatorType: string }) => entry.creatorType);
+  }
+
+  async isItemTrashed(library: LibraryRef, key: string): Promise<boolean> {
+    validateKey(key);
+    // Zotero 10.0.6's itemKey scope excludes trash even on /items/trash.
+    // Page the documented trash resource and inspect exact keys locally instead.
+    const items = await this.readPagedList(`${libraryPrefix(library)}/items/trash`, (value) => {
+      if (!isRecord(value) || !isRecord(value.data)) throw new ZoteroError("INVALID_RESPONSE", "Invalid Zotero trash response.");
+      return { key: validateKey(value.key), trashed: isTrashedData(value.data) };
+    });
+    return items.some((item) => item.key === key && item.trashed);
+  }
+
   async listAttachmentMetadata(library: LibraryRef, collectionKey?: string): Promise<readonly ZoteroAttachment[]> {
     const prefix = libraryPrefix(library);
     const path = collectionKey === undefined ? `${prefix}/items`
@@ -143,6 +183,15 @@ export class ZoteroClient {
     }
     const serverId = response.headers.get("Zotero-Server-ID");
     return { item, data: value.data, version: value.version as number, ...(serverId ? { serverId } : {}) };
+  }
+
+  async listItemAttachments(library: LibraryRef, key: string): Promise<readonly ZoteroAttachment[]> {
+    return this.readPagedList(`${libraryPrefix(library)}/items/${validateKey(key)}/children?itemType=attachment`, parseAttachment);
+  }
+
+  async attachmentFileUrl(library: LibraryRef, key: string): Promise<string> {
+    // Local API returns a file: URL here; do not follow /file redirects or download remote URLs.
+    return (await this.request(`${libraryPrefix(library)}/items/${validateKey(key)}/file/view/url`)).text();
   }
 
   async exportItem(library: LibraryRef, key: string): Promise<string> {
@@ -236,16 +285,17 @@ export class ZoteroClient {
 
     if (!response.ok) {
       await response.body?.cancel();
-      if (response.status === 401) throw new ZoteroError("AUTH_REQUIRED", "Zotero requires new write authorization.");
-      if (response.status === 412) throw new ZoteroError("CONFLICT", "The item has changed or a different Zotero database is connected. Reload it.");
+      if (response.status === 401) throw new ZoteroError("AUTH_REQUIRED", "Zotero requires new write authorization.", { status: response.status });
+      if (response.status === 412) throw new ZoteroError("CONFLICT", "The item has changed or a different Zotero database is connected. Reload it.", { status: response.status });
       if ([404, 405, 501].includes(response.status) && options.method && options.method !== "GET" && new URL(path, this.baseUrl).pathname.startsWith("/api/")) {
-        throw new ZoteroError("WRITE_UNSUPPORTED", "Local editing requires Zotero 10 or newer. Open the item in Zotero to edit it.");
+        throw new ZoteroError("WRITE_UNSUPPORTED", "Local editing requires Zotero 10 or newer. Open the item in Zotero to edit it.", { status: response.status });
       }
       if (response.status === 403) {
         throw new ZoteroError(
           "FORBIDDEN",
           options.method === "POST" && new URL(path, this.baseUrl).pathname.startsWith("/api/") ? "Zotero denied write authorization."
             : "Zotero denied access. Allow communication with other applications under Settings → Advanced.",
+          { status: response.status },
         );
       }
       throw new ZoteroError("HTTP_ERROR", `Zotero request failed (HTTP ${response.status}).`, { status: response.status });

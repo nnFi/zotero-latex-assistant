@@ -1,11 +1,18 @@
 # Zotero LaTeX Assistant
 
 Eine lokale VS-Code-Extension, die Zotero und LaTeX verbinden soll.
-Klassische Literaturverwaltung und spätere KI-Unterstützung über MCP sind getrennte Bereiche.
+Klassische Literaturverwaltung und KI-Unterstützung über den lokalen MCP-Server sind getrennte Bereiche.
 
 **Aktueller Stand:** Zotero-Seitenleiste mit Bibliotheken, hierarchischen Sammlungen,
 Projektzuordnung in `.zotero/config.json`, gezieltem BibLaTeX-Import,
 Quellenliste mit Mehrfachauswahl, Einfügen von LaTeX-Zitationen und DOI-/Titelsuche über Crossref.
+Der lokale MCP-Server bietet außerdem elf Werkzeuge für Lesen, Dublettenprüfung, Quellenaktualisierung,
+bibliografische Neuanlage, wiederherstellbaren Zotero-Papierkorb und PDF-Weitergabe
+an den Agenten. PDFs werden unverändert als Datei übergeben, ohne lokale Textextraktion.
+**Zotero: Set up Codex MCP connection** und **Zotero: Set up Claude MCP connection**
+richten das aktuelle Projekt für die jeweiligen VS-Code-KI-Erweiterungen ein.
+Beide Aktionen sind auch über das Zahnrad in der Zotero-Seitenleiste auswählbar.
+Einrichtung, Freigaben und tatsächlich geprüfte Ergebnisse: [MCP mit Codex und Claude](docs/MCP.md).
 Die vollständige Aufgabenliste steht in [PROJEKTSTATUS.md](PROJEKTSTATUS.md).
 
 ## Entwicklung starten
@@ -67,6 +74,7 @@ npm run compile   # JavaScript nach dist/ kompilieren
 npm run watch     # Bei Änderungen automatisch kompilieren
 npm test          # Tests des lokalen Zotero-Clients
 npm run test:live # Opt-in: echte VS-Code-/Zotero-Prüfung im temporären Testprojekt
+npm run package   # VSIX mit gebündelter Extension und eigenständigem MCP-Server
 ```
 
 Build, Typprüfung und Watch-Modus berücksichtigen sowohl die Extension als auch
@@ -142,10 +150,15 @@ VS-Code-Projekteinstellungen werden nicht automatisch als bestätigte Zuordnung
 übernommen; der dort eingestellte Zitierbefehl dient als Vorgabe bei der Einrichtung.
 Sammlungen können innerhalb derselben Bibliothek und Zotero-Datenbank auch nach
 dem Import gewechselt werden; ebenso kann wieder die gesamte Bibliothek gewählt
-werden. Bestehende Bib-Einträge, Zitier-Schlüssel und Zitate bleiben erhalten.
-Neue Quellen müssen zur neu gewählten Sammlung gehören. Bereits importierte
-Quellen bleiben auch außerhalb dieser Sammlung zitierbar und werden beim
-Metadatenexport über ihren Bibliotheks-/Eintragspfad aktualisiert. Der Wechsel
+werden. Beim Wechsel bleiben nur bereits importierte Quellen erhalten, die auch
+zur neu ausgewählten Sammlung gehören. Ihre Feldinhalte und Zitier-Schlüssel
+bleiben unverändert. Andere Einträge werden aus der aktiven `.bib` entfernt,
+zusammen mit den zugehörigen Zitationen im Projekt; gemischte Zitationen behalten
+ihre verbleibenden Quellen. Bei einer leeren Sammlung enthält die `.bib` danach
+keine Quelleneinträge. Neue Sammlungsquellen werden weiterhin gezielt importiert.
+Bib-Datei, Zitate und Projektzuordnung werden gemeinsam mit Sicherung geändert;
+ungespeicherte Änderungen, fehlerhafte Abrufe und zwischenzeitliche Dateiänderungen
+verhindern den Wechsel. Der Wechsel
 in eine andere Bibliothek oder Zotero-Datenbank bleibt bei importierten Quellen
 gesperrt, damit bestehende Zuordnungen erhalten bleiben.
 
@@ -310,8 +323,27 @@ vorbereiteten Bib-Bestand, bevor Dateien geändert werden:
   wird der tatsächlich resultierende Bestand geprüft.
 
 Die Prüfung betrifft die Projekt-`.bib`. Sie führt keine Quellen zusammen und
-ändert keine Zotero-Metadaten. Eine zukünftige Dublettenprüfung für die KI-Neuanlage
-in Zotero bleibt eine separate Funktion.
+ändert keine Zotero-Metadaten. Die zusätzliche bibliotheksweite Dublettenprüfung für KI-Neuanlagen in Zotero
+ist über `zotero_check_duplicates` und `zotero_create_item` implementiert.
+
+Der MCP kann Quellen direkt über DOI oder ISBN anlegen:
+`zotero_lookup_identifier` liefert eine Vorschau, `zotero_import_identifier`
+übernimmt die Quelle in die ausgewählte Sammlung. DOI-Recherche nutzt Crossref
+mit DataCite-Fallback; ISBN-Recherche nutzt Open Library und prüft die Buchausgabe.
+Neuanlagen bekommen einen festen Zitierschlüssel, der beim späteren `.bib`-Import
+erhalten bleibt. Gleiche DOI und ISBN-Buchausgaben werden bibliotheksweit geprüft.
+**Nur Quellenart und Titel sind Pflichtangaben.** Weitere Felder bleiben optional;
+fehlende empfohlene Angaben werden gemeldet, blockieren das Anlegen aber nicht.
+`zotero_get_item_schema` zeigt zulässige Felder/Rollen je Typ,
+`zotero_validate_metadata` prüft die Angaben. Details und Aufrufbeispiele stehen
+in der [MCP-Dokumentation](docs/MCP.md#optionale-angaben-zitierschlüssel-und-identifier-import).
+
+`zotero_attach_pdf` hängt eine lokale PDF als gespeicherte Kopie an eine bestehende
+Quelle der Projektsammlung an. Benötigt werden der absolute Dateipfad, die gelesene
+Quellenversion und eine stabile Anfrage-ID. Identische gespeicherte PDF-Anhänge
+werden wiederverwendet, bestehende Dateien bleiben erhalten. Der MCP prüft den
+gespeicherten Inhalt und setzt unterbrochene Uploads am selben Anhang fort.
+[Aufruf und Grenzen](docs/MCP.md#lokale-pdfs-anhängen).
 
 ### Alle Zitationen löschen und die Bibliothek wechseln
 
@@ -480,14 +512,14 @@ src/
   extension.ts           Aktivierung und Lebenszyklus
   zotero/                Lokaler Client, Anfragekoordination und Anhangsmetadaten
   biblatex/              Nativer Export, sicherer Import und Zitationsablauf
-  pdf/                   Extraktion und Fundstellen (Phase 4)
+  pdf/                   Historische Platzhalter; keine lokale Textextraktion
   research/              Crossref-DOI-/Titelsuche; weitere Anbieter vorbereitet
   views/                 Native Befehle und Zotero-TreeView
   config/                .zotero-Projektkonfiguration und sichere Projektdateien
   shared/                Gemeinsame Typen und Fehler
 mcp/
-  server.ts              Vorbereiteter Einstieg, noch kein laufender Server
-  tools/                 Geplante MCP-Werkzeuge
+  server.ts              Eigenständiger stdio-Server mit elf Werkzeugen
+  tools/                 Werkzeugübersicht
 test/                    Tests mit simulierten Zotero-Antworten
 docs/                    Projektauftrag und Architekturentscheidungen
 .vscode/                 F5-Start und Build-Aufgaben
@@ -526,8 +558,9 @@ Plugin-Antworten getestet. Die aktuell geprüfte lokale Zotero-Installation
 liefert am BBT-Endpunkt 404; ein echter Translator-Durchlauf bleibt bis zur
 Installation/Aktivierung des Plugins offen.
 
-Weitere geplante Funktionen: PDF-Analyse, MCP und externe Quellen nach Freigabe
-in Zotero anlegen.
+Der MCP-Server und bibliografische Neuanlagen sind implementiert. Weitere geplante
+Funktionen: erweiterte externe Recherche und weitere Sammlungs-/Anhangsschreibwerkzeuge.
+PDFs können über MCP bereits direkt an einen PDF-fähigen Agenten übergeben werden.
 Details: [Architektur](docs/ARCHITEKTUR.md) und [Projektstatus](PROJEKTSTATUS.md).
 
 ## Quellenverwaltung und Anhangshinweise

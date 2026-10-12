@@ -1,0 +1,17 @@
+const { build } = require("esbuild");
+const options = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true };
+const entries = [
+  { ...options, entryPoints: ["mcp/server.ts"], outfile: "dist/mcp/server.cjs", metafile: true },
+  { ...options, entryPoints: ["src/extension.ts"], outfile: "dist/extension.cjs", external: ["vscode"] },
+];
+async function run() {
+  if (process.argv.includes("--watch")) {
+    const { context } = require("esbuild");
+    for (const entry of entries) await (await context(entry)).watch();
+  } else {
+    const results = await Promise.all(entries.map((entry) => build(entry)));
+    const imports = Object.values(results[0].metafile.outputs).flatMap((output) => output.imports);
+    if (imports.some((entry) => !entry.path.startsWith("node:"))) throw new Error("MCP bundle contains an external runtime dependency.");
+  }
+}
+run().catch((error) => { console.error(error.message); process.exitCode = 1; });

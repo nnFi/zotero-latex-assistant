@@ -53,6 +53,92 @@ test("Comments, literal examples, braces in options and line endings survive a s
     original.replace("sorting={a,b},foo={x]y},style=old", "sorting={a,b},foo={x]y},style=numeric"));
 });
 
+test("Escaped package and option declarations are preserved by the style planner", async (t) => {
+  for (const command of [String.raw`\\usepackage[style=old]{biblatex}`, String.raw`\\RequirePackage[style=old]{biblatex}`,
+    String.raw`\\PassOptionsToPackage{style=old}{biblatex}`, String.raw`\\ExecuteBibliographyOptions{style=old}`]) {
+    await t.test(command, () => {
+      assert.deepEqual(planBiblatexStyle([{ path: "example.tex", text: command }], "numeric"), []);
+    });
+  }
+});
+
+test("Escaped classic BibTeX commands do not block a BibLaTeX style change", () => {
+  const text = String.raw`\\bibliographystyle{plain}` + "\n" + String.raw`\usepackage[style=old]{biblatex}`;
+  assert.equal(planBiblatexStyle([{ path: "main.tex", text }], "numeric")[0]?.text, text.replace("style=old", "style=numeric"));
+});
+
+test("Escaped document classes never create roots or hide a later real document class", () => {
+  const escaped = String.raw`\\documentclass{example}`;
+  assert.deepEqual(planBiblatexStyle([{ path: "example.tex", text: escaped }], "numeric", "refs.bib"), []);
+  const text = escaped + "\n" + String.raw`\documentclass{article}` + "\n" + String.raw`\begin{document}Text\end{document}`;
+  assert.equal(planBiblatexStyle([{ path: "main.tex", text }], "numeric")[0]?.text,
+    text.replace(String.raw`\documentclass{article}` + "\n", String.raw`\documentclass{article}` + "\n" + String.raw`\usepackage[style=numeric]{biblatex}` + "\n"));
+});
+
+test("An escaped package in an included preamble cannot suppress the real package insertion", () => {
+  const root = { path: "main.tex", text: String.raw`\documentclass{article}` + "\n" + String.raw`\input{preamble}` + "\n" + String.raw`\begin{document}Text\end{document}` };
+  const preamble = { path: "preamble.tex", text: String.raw`\\usepackage[style=example]{biblatex}` };
+  const changes = planBiblatexStyle([root, preamble], "numeric", "refs.bib");
+  assert.deepEqual(changes.map((change) => change.path), ["main.tex"]);
+  assert.equal(changes[0]?.text, root.text.replace(String.raw`\documentclass{article}` + "\n",
+    String.raw`\documentclass{article}` + "\n" + String.raw`\usepackage[style=numeric]{biblatex}` + "\n")
+    .replace(String.raw`\begin{document}`, String.raw`\addbibresource{refs.bib}` + "\n" + String.raw`\begin{document}`)
+    .replace(String.raw`\end{document}`, String.raw`\printbibliography` + "\n" + String.raw`\end{document}`));
+});
+
+test("Bibliography setup uses real document boundaries and preserves escaped examples", () => {
+  const fakeBegin = String.raw`\\begin{document}`;
+  const fakeEnd = String.raw`\\end{document}`;
+  const text = String.raw`\documentclass{article}` + "\n" + String.raw`\usepackage[style=old]{biblatex}` + "\n"
+    + fakeBegin + "\n" + fakeEnd + "\n" + String.raw`\begin{document}` + "\nText\n" + String.raw`\end{document}`;
+  const expected = text.replace("style=old", "style=numeric")
+    .replace("\n" + String.raw`\begin{document}`, "\n" + String.raw`\addbibresource{refs.bib}` + "\n" + String.raw`\begin{document}`)
+    .replace("\n" + String.raw`\end{document}`, "\n" + String.raw`\printbibliography` + "\n" + String.raw`\end{document}`);
+  assert.equal(planBiblatexStyle([{ path: "main.tex", text }], "numeric", "refs.bib")[0]?.text, expected);
+});
+
+test("Backslash parity preserves escaped commands while recognizing active commands after line breaks", () => {
+  for (let count = 1; count <= 6; count++) {
+    const text = "\\".repeat(count) + "usepackage[style=old]{biblatex}";
+    const changes = planBiblatexStyle([{ path: "main.tex", text }], "numeric");
+    if (count % 2) assert.equal(changes[0]?.text, text.replace("style=old", "style=numeric"), `backslashes: ${count}`);
+    else assert.deepEqual(changes, [], `backslashes: ${count}`);
+  }
+});
+
+test("Incomplete escaped declarations are ignored before parsing their arguments", () => {
+  const examples = [String.raw`\\usepackage[broken`, String.raw`\\RequirePackage[broken`, String.raw`\\PassOptionsToPackage{broken`,
+    String.raw`\\ExecuteBibliographyOptions{broken`, String.raw`\\documentclass`, String.raw`\\bibliographystyle{broken`].join("\n");
+  const text = examples + "\n" + String.raw`\usepackage[style=old]{biblatex}`;
+  assert.equal(planBiblatexStyle([{ path: "main.tex", text }], "numeric")[0]?.text, text.replace("style=old", "style=numeric"));
+});
+
+test("Comments and all supported literal regions hide package, class and classic-BibTeX examples", () => {
+  const commands = [String.raw`\documentclass{example}`, String.raw`\usepackage[style=example]{biblatex}`, String.raw`\RequirePackage[style=example]{biblatex}`,
+    String.raw`\PassOptionsToPackage{style=example}{biblatex}`, String.raw`\ExecuteBibliographyOptions{style=example}`, String.raw`\bibliographystyle{plain}`].join("\n");
+  const examples = commands.split("\n").map((line) => `% ${line}`).join("\r\n") + "\r\n"
+    + ["verbatim", "verbatim*", "Verbatim", "Verbatim*", "lstlisting", "minted"]
+      .map((environment) => `\\begin{${environment}}\n${commands}\n\\end{${environment}}`).join("\n")
+    + "\n" + commands.split("\n").map((line) => `\\verb|${line}|\n\\verb*|${line}|`).join("\n");
+  const active = String.raw`\PassOptionsToPackage{backend=biber,style=old}{biblatex}` + "\r\n"
+    + String.raw`\usepackage[style=old]{biblatex}` + "\r\n" + String.raw`\ExecuteBibliographyOptions{sorting=nyt,style=old}`;
+  const text = examples + "\r\n" + active;
+  const expected = examples + "\r\n" + String.raw`\PassOptionsToPackage{backend=biber}{biblatex}` + "\r\n"
+    + String.raw`\usepackage[style=numeric]{biblatex}` + "\r\n" + String.raw`\ExecuteBibliographyOptions{sorting=nyt}`;
+  assert.equal(planBiblatexStyle([{ path: "main.tex", text }], "numeric")[0]?.text, expected);
+});
+
+test("Real classic BibTeX still blocks style edits even when preceded by escaped examples", () => {
+  const text = String.raw`\\bibliographystyle{example}` + "\n" + String.raw`\bibliographystyle{plain}` + "\n" + String.raw`\usepackage[style=old]{biblatex}`;
+  assert.throws(() => planBiblatexStyle([{ path: "main.tex", text }], "numeric"), /classic BibTeX/);
+});
+
+test("Escaped document environments do not substitute for missing real boundaries", () => {
+  const text = String.raw`\documentclass{article}` + "\n" + String.raw`\usepackage[style=old]{biblatex}`
+    + "\n" + String.raw`\\begin{document}Text\\end{document}`;
+  assert.throws(() => planBiblatexStyle([{ path: "main.tex", text }], "numeric", "refs.bib"), /complete document environment/);
+});
+
 test("PassOptionsToPackage cannot override the newly selected package style", () => {
   const sources = [{ path: "main.tex", text: "\\PassOptionsToPackage{style=old,backend=biber,citestyle=old}{biblatex}\n\\input{preamble}\n" },
     { path: "preamble.tex", text: "\\usepackage[sorting=nyt]{biblatex}" }];

@@ -3,6 +3,7 @@ const { spawn } = require("node:child_process");
 const compiler = require.resolve("typescript/bin/tsc");
 const watchers = ["tsconfig.json", "tsconfig.webview.json"].map((config) =>
   spawn(process.execPath, [compiler, "--watch", "--preserveWatchOutput", "--project", config], { stdio: "inherit" }));
+watchers.push(spawn(process.execPath, ["scripts/bundle.cjs", "--watch"], { stdio: "inherit" }));
 let stopping = false;
 function stop(code) {
   if (stopping) return;

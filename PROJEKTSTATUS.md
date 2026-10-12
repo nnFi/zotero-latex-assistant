@@ -3,7 +3,10 @@
 Stand: 12. Oktober 2026.
 
 `[x]` = umgesetzt bzw. tatsächlich geprüft. `[ ]` = noch offen.
-Die Liste wird manuell gepflegt. Vorbereitete Ordner und Dateien bedeuten nicht,
+Die Liste wird manuell gepflegt. Alle bisher offenen manuellen Prüfungen sind am
+12. Oktober 2026 auf ausdrückliche Benutzerbestätigung als abgeschlossen markiert.
+Diese Bestätigung ergänzt die automatisierten Prüfberichte; es wurden dafür
+keine neuen Tests durch den Agenten ausgeführt. Vorbereitete Ordner und Dateien bedeuten nicht,
 dass die zugehörigen Funktionen bereits implementiert sind.
 
 Die folgende Bestandsaufnahme wurde mit dem aktuellen Code abgeglichen.
@@ -55,8 +58,8 @@ nicht mehr den aktuellen Funktionsumfang.
   können in beiden Reihenfolgen vollständig eingerichtet werden.
 - Der vollständige Better-BibLaTeX-Translator ist der Standard für neue Exporte
   und manuelle Metadatenaktualisierungen. Das lokale BBT-Plugin ist erforderlich;
-  `native` bleibt eine ausdrücklich wählbare Alternative. Ein echter BBT-Export
-  ist noch nicht live geprüft, da der lokale Plugin-Endpunkt beim letzten Live-Test 404 lieferte.
+  `native` bleibt eine ausdrücklich wählbare Alternative. Die manuelle BBT-Integration ist vom Benutzer als abgeschlossen bestätigt;
+  der frühere automatisierte Live-Test mit HTTP 404 bleibt als historischer Prüfstand dokumentiert.
 - Bib-Import und Metadatenaktualisierung prüfen neue DOI-Dubletten und mögliche
   Übereinstimmungen bei Titel, Autorennamen und Publikationsjahr. Eindeutige DOI-
   Konflikte brechen ab; mögliche Dubletten benötigen eine ausdrückliche Übernahme.
@@ -66,56 +69,62 @@ nicht mehr den aktuellen Funktionsumfang.
 - Zotero-/Better-BibTeX-Schlüssel werden projektbezogen gespeichert. Das optionale
   Festhalten neuer Schlüssel in Zotero verwendet einen separaten Schreibadapter
   mit lokaler Autorisierung, SecretStorage und Versionsprüfung.
-- MCP-Server, MCP-Werkzeuge, PDF-Extraktion/-Suche, OpenAlex und Unpaywall sind
-  noch nicht implementiert. Die vorhandenen Dateien enthalten nur Platzhalter.
+- Der lokale MCP-Server mit elf Werkzeugen ist implementiert: Bibliotheken,
+  Sammlungen, Projektbindung, Suche, Metadaten, Dublettenprüfung, Neuanlage und
+  wiederherstellbarer Papierkorb, Quellenaktualisierung und PDF-Dateiweitergabe. Die Extension richtet Codex über projektbezogene
+  `.codex/config.toml` und Claude Code über `.mcp.json` mit explizitem Projektpfad ein.
+  Gemeinsame Geschäftslogik, Anfragekoordination, Server-/Versionsschutz und
+  sitzungsbezogene Schlüssel im Speicher werden wiederverwendet. Server und
+  Laufzeitabhängigkeiten sind im VSIX gebündelt.
+- Echter Codex-CLI-Lesezugriff und das Anlegen–Wiederfinden–Papierkorb-Szenario in
+  der freigegebenen `TestSammlungMCP` sind bestanden: genau eine Testquelle
+  `KJ6NE8XL`, angelegt mit Version 7, verifiziert im Papierkorb mit Version 8.
+  Die interaktive Nutzung in Codex-/Claude-IDE einschließlich Claude-Live-Schreiben
+  ist vom Benutzer als abgeschlossen bestätigt. Der frühere CLI-Prüfstand mit
+  abgelaufener Anmeldung (`401`) bleibt im Prüfprotokoll dokumentiert.
+- PDFs werden über MCP direkt als Datei oder eingebettete PDF-Ressource an den Agenten
+  übergeben. Keine lokale Textextraktion oder OCR. OpenAlex und Unpaywall bleiben Platzhalter.
 - Fehlt Better BibTeX beim Zitieren oder Importieren, kann direkt „Use Zotero
   export“ gewählt werden. Diese ausdrückliche Wahl speichert den lokalen nativen
   Exporter für den Projektordner und führt denselben Import-/Zitiervorgang fort.
   Abbrechen bleibt ohne neue Bib-Einträge oder Texteinfügung und gibt die Buttons
   der Quellenliste wieder frei; Filter und Auswahl bleiben erhalten. Sonstige Exportfehler
   lösen keinen Exporterwechsel aus.
-- Es gibt aktuell **28 Testdateien mit 271 deklarierten Testfällen**. Automatisierte
+- Es gibt aktuell **32 Testdateien mit 311 bestandenen Testfällen**. Automatisierte
   Prüfung, lokale LaTeX-/Biber-Beispiele und der isolierte Live-Smoke mit echtem
   VS-Code-Host und lokalem Zotero sind erfolgreich; der vollständige
-  manuelle Durchlauf der jüngsten Funktionen im VS-Code-Editor bleibt offen.
+  manuelle Durchlauf der jüngsten Funktionen im VS-Code-Editor ist vom Benutzer
+  als abgeschlossen bestätigt.
+
+## Abgeschlossene manuelle Prüfungen
+
+Am 12. Oktober 2026 vom Benutzer als abgeschlossen bestätigt:
+
+- [x] Oberflächenabläufe mit lokalem Zotero: Stilwechsel, Zitierdialoge, Anhaken,
+  Abwählen, leere Auswahl, direktes Löschen in der `.bib`, Speichern, Neustart
+  und mehrere Workspace-Ordner.
+- [x] Echte Better-BibTeX-/Better-BibLaTeX-Integration einschließlich Export prüfen.
+- [x] Installiertes VSIX unter Fedora einschließlich lokaler TeX-Werkzeuge,
+  Schema, Symbole und Projektdateien manuell prüfen.
+- [x] Interaktive Codex-/Claude-IDE-Werkzeugaufrufe einschließlich Claude-Live-Schreiben prüfen.
+- [x] PDF-Weitergabe in den KI-Clients, Client-Unterstützung und tatsächliche
+  Seitenbelege einschließlich Scans prüfen; keine lokale Textextraktion / OCR.
 
 ## Nächste Schritte in Arbeitsreihenfolge
 
-1. **Manuelle Oberflächenabläufe vervollständigen.** Der automatisierte Live-Smoke
-   prüft bereits Aktivierung, nativen Export, Bib-Aktualisierung, Webview-Erzeugung
-   und Zitation mit echter Editor-API. Zusätzlich Stilwechsel, Zitierdialoge, Anhaken,
-   Abwählen, leere Auswahl, direktes Löschen in der `.bib`, Speichern, Neustart und
-   mehrere Workspace-Ordner gemeinsam mit dem lokalen Zotero prüfen. Echte BBT-
-   Integration separat prüfen, wenn das Plugin verfügbar ist. Automatisierte
-   Tests ersetzen diesen noch offenen Oberflächentest nicht.
-2. **Architekturdokumentation vervollständigen.** Die Fehlermeldungen sind inzwischen
+1. **Architekturdokumentation vervollständigen.** Die Fehlermeldungen sind inzwischen
    auf Englisch vereinheitlicht. `docs/ARCHITEKTUR.md` enthält noch Angaben zur
    früheren CSL-/Detailansicht und zum alten Schlüsselimport; die Beschreibung
    an die aktuelle Stilauswahl, Synchronisierung und Schlüsselverwaltung anpassen.
-3. **Installierbares VSIX erstellen und unter Fedora prüfen.** Verpackung und
-   Installation reproduzierbar machen; prüfen, ob die installierte Extension
-   lokale TeX-Werkzeuge, Schema, Symbole und Projektdateien korrekt findet.
-4. **MCP-Grundlage und Lesezugriff implementieren.** Zuerst die gemeinsame
-   Projekt-/Zotero-Geschäftslogik von der VS-Code-Oberfläche trennen. Danach die
-   dann aktuelle offizielle SDK-Dokumentation prüfen, stdio-Server, Eingabeschemas
-   und Lese-Werkzeuge für Bibliotheken, Sammlungen, Metadaten und Anhänge umsetzen.
-   Anschließend mit einem echten MCP-Client testen.
-5. **PDF-Volltext und belegbare Fundstellen ergänzen.** Zotero-indexierten Volltext
-   sowie lokale PDF-Textextraktion mit Anhangs-ID und tatsächlich gelesener
-   PDF-Seite implementieren. Darauf bauen Suche, Fundstellen und KI-Auswertung auf;
-   Scans und beschädigte PDFs brauchen gesonderte Behandlung.
-6. **Kontrollierte KI-Schreibwerkzeuge ergänzen.** Auf MCP-Lesezugriff und
-    Dublettenprüfung aufbauen. Neue Quellen vorschlagen, Änderungen vorab anzeigen,
-    Freigabe einholen und Schreiben auf die ausgewählte Sammlung beschränken.
-    Der vorhandene Adapter unterstützt bisher Metadaten-PATCH, noch keine
-    MCP-Werkzeuge für Neuanlage, Sammlungszuordnung oder PDF-Anhänge.
-7. **Externe Recherche ausbauen.** Nach Prüfung der jeweiligen API-Bedingungen
-    OpenAlex und danach Unpaywall anbinden; bestehende Sammlung zuerst durchsuchen,
-    Vorschläge verifizieren und erst nach Freigabe Quellen/PDFs übernehmen.
+2. **Weitere KI-Schreibwerkzeuge ergänzen.** Neuanlage, Sammlungszuordnung bei
+   Erstellung, Metadaten-Update, PDF-Anhängen und wiederherstellbarer Papierkorb
+   sind implementiert. Weitere Werkzeuge folgen separat; Zotero-Freigaben bleiben erforderlich.
+3. **Externe Recherche ausbauen.** Nach Prüfung der jeweiligen API-Bedingungen
+   OpenAlex und danach Unpaywall anbinden; bestehende Sammlung zuerst durchsuchen,
+   Vorschläge verifizieren und erst nach Freigabe Quellen/PDFs übernehmen.
 
-Die ausdrückliche Migration alter Zitier-Schlüssel ist implementiert. Der
-Better-BibLaTeX-Translator ist ebenfalls angebunden; dessen Live-Test folgt nach
-Installation/Aktivierung des lokalen BBT-Plugins.
+Die ausdrückliche Migration alter Zitier-Schlüssel und der Better-BibLaTeX-Translator
+sind implementiert; die manuelle BBT-Prüfung ist vom Benutzer bestätigt.
 
 ## Aufgabenabgrenzung
 
@@ -128,8 +137,8 @@ Dateien und PDFs werden für Menschen in Zotero geöffnet und verwaltet.
 Auf ausdrücklichen Benutzerwunsch dürfen neu übernommene Zitier-Schlüssel
 zusätzlich über die autorisierte API in Zotero festgehalten werden.
 
-Die geplanten MCP-/KI-Funktionen für Recherche, PDF-Analyse und ausdrücklich
-freigegebene Änderungen sind davon getrennt; sie sind keine zusätzlichen
+Die MCP-/KI-Funktionen für ausdrücklich beauftragte Neuanlage und Papierkorb
+sowie die späteren Funktionen für Recherche und PDF-Analyse sind davon getrennt; sie sind keine zusätzlichen
 Formulare für manuelle Literaturverwaltung.
 
 ## Grundstruktur
@@ -173,7 +182,7 @@ Formulare für manuelle Literaturverwaltung.
 - [x] Bibliotheken um hierarchische Sammlungen erweitern.
 - [x] „Alle Einträge“ einschließlich Quellen ohne Sammlung anzeigen.
 - [x] Sammlungen und Quellen über alle API-Ergebnisseiten laden.
-- [x] Bibliothek und Sammlung über „Bibliothek festlegen“ auswählen; Bib-Datei und Stil werden unabhängig festgelegt. Sammlungswechsel innerhalb derselben Bibliothek/Datenbank auch nach Imports erlauben und bestehende Quellen erhalten; andere Bibliotheken/Datenbanken bei vorhandenen Imports weiter sperren.
+- [x] Bibliothek und Sammlung über „Bibliothek festlegen“ auswählen; Bib-Datei und Stil werden unabhängig festgelegt. Sammlungswechsel innerhalb derselben Bibliothek/Datenbank auch nach Imports erlauben; dabei nur Quellen der neu gewählten Sammlung samt stabilen Schlüsseln erhalten und die übrigen Bib-Einträge/Zitationen gemeinsam mit Sicherung entfernen; andere Bibliotheken/Datenbanken bei vorhandenen Imports weiter sperren.
 - [x] Zuordnung, Zitierstil, Zitierbefehl, Bib-Datei und Importbestand in `.zotero/config.json` speichern; beim Start erkennen und in Statusleiste / Baum markieren.
 - [x] Quellen ausschließlich in der Tabelle laden; die Seitenleiste dient Bibliotheks- und Sammlungsnavigation. Sammlungen ohne echte Unterordner haben keinen Aufklapppfeil.
 - [x] Einfachen lokalen Tabellenfilter nach Titel, Ersteller, Jahr und DOI beibehalten; weitergehende Literaturverwaltung und Suche nutzt Zotero.
@@ -219,47 +228,58 @@ Formulare für manuelle Literaturverwaltung.
 
 ## Phase 4 – MCP und PDF-Analyse
 
-- [ ] Offizielles TypeScript-MCP-SDK einbinden und stdio-Server implementieren.
-- [ ] Gemeinsame Zotero-Geschäftslogik im MCP-Server wiederverwenden.
-- [ ] Projekteinstellung zur ausgewählten Sammlung an den Server übergeben.
-- [ ] Eingabeschemas, strukturierte Ergebnisse und Fehler für alle Werkzeuge definieren.
-- [ ] `zotero_list_libraries` implementieren.
-- [ ] `zotero_list_collections` implementieren.
-- [ ] `zotero_get_selected_collection` implementieren.
-- [ ] `zotero_search` implementieren.
-- [ ] `zotero_get_metadata` implementieren.
-- [ ] `zotero_list_attachments` implementieren.
-- [ ] `zotero_get_fulltext` für Zotero-indexierten Volltext implementieren.
-- [ ] PDF.js oder geeignete Alternative prüfen und auswählen.
-- [ ] `zotero_read_pdf_pages` mit tatsächlich ermittelten Seitenangaben implementieren.
+- [x] Offizielles TypeScript-MCP-SDK einbinden und stdio-Server implementieren.
+- [x] Gemeinsame Zotero-Geschäftslogik im MCP-Server wiederverwenden.
+- [x] Projekteinstellung zur ausgewählten Sammlung an den Server übergeben.
+- [x] Eingabeschemas, strukturierte Ergebnisse und Fehler für alle Werkzeuge definieren.
+- [x] `zotero_list_libraries` implementieren.
+- [x] `zotero_list_collections` implementieren.
+- [x] `zotero_get_selected_collection` implementieren.
+- [x] `zotero_search` implementieren.
+- [x] `zotero_get_metadata` implementieren.
+- [x] `zotero_list_attachments` implementieren.
+- [x] `zotero_get_attachment` mit geprüftem lokalem PDF-Pfad und optional originalen PDF-Bytes implementieren.
+- [x] Keine lokale Textextraktion / OCR; PDF-Lesen übernimmt der Agent bzw. sein Client.
+- [–] Zotero-indexierten Volltext vorerst zurückstellen; direkte PDF-Weitergabe verwenden.
+- [–] Lokale PDF-Extraktion auf Benutzerwunsch nicht implementieren.
+- [–] Serverseitige PDF-Seitenextraktion entfällt; Agent liest die PDF-Datei direkt.
 - [ ] Textsuche mit Quellenschlüssel, Anhang, PDF-Seite und Fundstelle implementieren.
-- [ ] Mehrere Anhänge und beschädigte PDFs berücksichtigen.
-- [ ] PDF-Verarbeitung ohne unnötige Kopien und mit validierten lokalen Pfaden umsetzen.
+- [x] Mehrere Anhänge auflisten und fehlende / nicht als PDF erkennbare Dateien abweisen; PDF-Parsing bleibt beim Agenten.
+- [x] PDF-Weitergabe ohne temporäre Kopien mit von Zotero aufgelösten, validierten lokalen Pfaden umsetzen.
 - [ ] PDF-Analyseaktion in der Oberfläche mit der gewählten Modellanbindung verbinden.
-- [ ] MCP-Anbindung in kompatibler VS-Code-KI-Umgebung konfigurieren und testen.
+- [x] Codex- und Claude-Code-Einrichtungsaktionen implementieren und im echten VS-Code-Host prüfen.
+- [x] Codex CLI über stdio mit echtem Zotero lesen, anlegen, wiederfinden und in Papierkorb verschieben.
+- [x] Interaktive Codex-IDE-/Claude-IDE-Werkzeugaufrufe und Claude-Live-Schreiben nach erneuter Anmeldung prüfen. (Benutzerbestätigung vom 12. Oktober 2026.)
 - [ ] Dokumentinhalte und Schlussfolgerungen unterscheidbar zurückgeben.
 
 ## Phase 5 – Kontrollierter KI-Schreibzugriff (keine manuelle Quellenverwaltung)
 
-- [ ] Fähigkeiten der tatsächlich installierten Zotero-Version prüfen.
+- [x] Fähigkeiten der tatsächlich installierten Zotero-Version prüfen.
 - [x] Zotero-10+-Schreibadapter und lokale Autorisierung implementiert / getestet. Das Metadatenformular wurde später auf Benutzerwunsch entfernt; Bearbeiten erfolgt über „In Zotero öffnen“.
-- [ ] KI-Schreibwerkzeuge und bei Bedarf Web-API-Adapter ergänzen.
-- [x] Dauerhafte lokale Freigaben in SecretStorage speichern und Server-ID/Objektversionen beachten; einmalige Freigaben nicht speichern.
+- [x] Lokale KI-Schreibwerkzeuge für bibliografische Neuanlage und Papierkorb ergänzen.
+- [ ] Weitere Schreibwerkzeuge bzw. Web-API-Adapter bei Bedarf ergänzen.
+- [x] Dauerhafte lokale Freigaben in Extension-SecretStorage bzw. MCP-Sitzungsspeicher halten; Server-ID/Objektversionen beachten; einmalige Freigaben nicht speichern.
 - [x] Leseclient und vorbereiteten KI-Schreibadapter trennen; keine manuelle Bearbeitung in der Extension anbieten.
-- [ ] Schreiben auf die ausgewählte Sammlung beschränken und bei fehlender Auswahl blockieren.
-- [ ] Neue Quellen vor dem Import zur ausdrücklichen Freigabe anzeigen.
-- [ ] Dublettenprüfung für spätere KI-Neuanlagen in Zotero über Bibliothek/Sammlung ergänzen; die Prüfung des Projekt-Bib-Bestands ist bereits implementiert.
-- [ ] `zotero_check_duplicates` implementieren.
-- [ ] `zotero_create_item` implementieren.
-- [ ] `zotero_update_item` ohne ungefragtes Überschreiben implementieren.
+- [x] Schreiben auf die ausgewählte Sammlung beschränken und bei fehlender Auswahl blockieren.
+- [x] Schreibwerkzeuge nur bei ausdrücklichem Auftrag aufrufen; eigenständige Vorschläge benötigen Zustimmung. Zotero-Freigaben bleiben erhalten.
+- [x] Dublettenprüfung für spätere KI-Neuanlagen in Zotero über Bibliothek/Sammlung ergänzen; die Prüfung des Projekt-Bib-Bestands ist bereits implementiert.
+- [x] `zotero_check_duplicates` implementieren.
+- [x] `zotero_create_item` implementieren.
+- [x] Neuanlagen mit festem nativem Zitierschlüssel bzw. Extra-Fallback versehen und beim späteren Projektimport erhalten.
+- [x] `zotero_get_item_schema` und `zotero_validate_metadata`: dynamische Feld-/Rollenprüfung und unverbindliche Empfehlungen; nur Quellenart und Titel sind Pflicht.
+- [x] `zotero_lookup_identifier` und `zotero_import_identifier`: DOI über Crossref/DataCite, ISBN über Open Library, Herkunftsnachweis und eingefrorene Metadaten für sichere Wiederholungen.
+- [x] ISBN-Prüfziffern, ISBN-10/13-Äquivalenz und bibliotheksweite Prüfung derselben Buchausgabe ergänzen; Buchkapitel mit gemeinsamer ISBN zulassen.
+- [x] `zotero_delete_item` als versionsgeschützten, verifizierten Papierkorb implementieren.
+- [x] `zotero_update_item` als validiertes partielles PATCH mit Versionsschutz und Rückleseprüfung implementieren.
 - [ ] `zotero_add_to_collection` implementieren.
-- [ ] `zotero_attach_pdf` implementieren.
+- [x] `zotero_attach_pdf`: lokale PDF als gespeicherte Kopie, verifizierter Drei-Phasen-Upload, Inhaltsdubletten und persistenter Wiederholungsschutz.
 - [ ] Zuständigkeit von `zotero_import_bibtex` definieren und Werkzeug implementieren.
 - [x] Zitationen als native Editoraktion über Tabellenzeile, Befehlspalette und Editor-Kontextmenü implementieren; Quellensuche, Seitenzahl und Zusatz im oberen Eingabebereich.
 - [ ] MCP-Brücke für Editoraktionen bei Bedarf ergänzen.
 - [ ] Metadatenänderungen nachvollziehbar protokollieren und automatische Löschungen ausschließen.
 - [x] Backend-Tests für lokale Autorisierung, SecretStorage, Instanzbindung, Versionskonflikte und fehlgeschlagene Metadatenänderungen vorhanden.
-- [ ] Tests für spätere KI-/MCP-Freigaben, Sammlungsscope, Duplikate, Neuanlage und Anhänge ergänzen.
+- [x] Tests für MCP-Freigaben, Sammlungsscope, Dubletten, Neuanlage, Antwortverlust und Papierkorb ergänzen.
+- [x] Tests für PDF-Anhangsneuanlage, Gruppen, Scope, Freigaben, Dateiprüfung, verlorene Antworten und Upload-Wiederholung ergänzen.
 
 ## Phase 6 – DOI-Recherche und spätere wissenschaftliche KI-Recherche
 
@@ -280,19 +300,49 @@ Formulare für manuelle Literaturverwaltung.
 
 - [x] Manuelle Literaturverwaltung Zotero überlassen; Projektzuordnung, Liste und Bib-Import sind ohne KI nutzbar.
 - [x] Der implementierte Zotero-Zugriff verwendet APIs und schreibt nicht in die Zotero-SQLite-Datenbank; diese Vorgabe gilt auch für spätere Funktionen.
-- [x] Zotero-Freigabeschlüssel ausschließlich über SecretStorage behandeln; keine Schlüssel in `.zotero/config.json` schreiben.
+- [x] Zotero-Freigabeschlüssel nur in SecretStorage bzw. MCP-Sitzungsspeicher halten; keine Schlüssel in Projektdateien oder Ergebnissen.
 - [ ] Modellanbindung und Weitergabe lokaler PDF-Inhalte transparent konfigurieren.
 - [ ] Keine erfundenen Zitate, Seitenzahlen oder Dokumentinhalte zurückgeben.
 - [ ] PDF-Downloads auf zulässige Quellen beschränken.
 - [x] Pfad-/Symlinkschutz, Dateisnapshots, Sicherungen und Importfehlerprüfungen implementiert; Stilwechsel und Listen-Synchronisierung mit Rücksetzen bei Schreibfehlern geprüft.
 - [ ] Gemeinsames Rücksetzen für alle übrigen Importwege vervollständigen.
 - [x] Lokale LaTeX-/Biber-Durchläufe mit `numeric` und `authoryear` erfolgreich; Zitate, Literaturverzeichnis und deutsche Seitenbezeichnungen im Ergebnis geprüft.
-- [ ] Jüngsten Gesamtworkflow im echten VS-Code-Host mit Zotero und, soweit verfügbar, Better BibTeX prüfen.
+- [x] Jüngsten Gesamtworkflow im echten VS-Code-Host mit Zotero und, soweit verfügbar, Better BibTeX prüfen. (Benutzerbestätigung vom 12. Oktober 2026.)
 - [x] Isolierten Live-Smoke mit echtem VS-Code-Host, nativer Zotero-API, Bib-Aktualisierung, Webview-Erzeugung und Editor-API ausführen; Bericht speichern.
-- [ ] Nach Implementierung der MCP-Werkzeuge deren Integration mit einem echten MCP-Client prüfen.
-- [ ] Installierbares VSIX erstellen und unter Fedora prüfen.
+- [x] Nach Implementierung der MCP-Werkzeuge deren Integration mit einem echten MCP-Client prüfen.
+- [x] Installierbares VSIX mit gebündelten Laufzeitabhängigkeiten erstellen und enthaltenen Server separat prüfen.
+- [x] Installierten VSIX-Oberflächenworkflow unter Fedora manuell prüfen. (Benutzerbestätigung vom 12. Oktober 2026.)
 
 ## Aktuelle Prüfung – 12. Oktober 2026
+
+
+MCP-Erstintegration mit Lesen, Neuanlage und Papierkorb:
+
+- Offizielle MCP-, Codex-, Claude- und Zotero-Dokumentationen erneut geprüft;
+  stabiles offizielles SDK 2.3.1 exakt eingebunden. Lokale Schemaendpunkte und
+  Papierkorbverhalten mit Zotero 10.0.6 tatsächlich geprüft.
+- Acht Werkzeuge mit Schemas, strukturierten Ergebnissen, Annotationen und Fehlern;
+  Projektpfad ausdrücklich, kein VS-Code-Import im Server, nur MCP auf stdout.
+- Echte Codex-Leseprüfung vor Schreibprüfung bestanden. Freigegebene synthetische
+  Testquelle `KJ6NE8XL` genau einmal angelegt, wiedergefunden und in den
+  wiederherstellbaren Papierkorb verschoben. Neuanlage Version 7; Papierkorb
+  Version 8, `already-trashed`, `verified: true`. Projektdateien unverändert.
+- Unklare Ergebnisse führten zu Rücklesen mit derselben Anfrage-ID; keine zweite
+  Quelle. Lokale API liefert boolesches `deleted`; `itemKey`-Filter im Papierkorb
+  ergibt hier keine Treffer. Die Verifikation berücksichtigt beides.
+- Beide TypeScript-Prüfungen und 289 Tests in 30 Dateien bestanden. Der echte
+  stdio-Prozesstest benötigt in der Agenten-Testumgebung freigegebene Prozess-I/O;
+  unter deren Einschränkung wurde die Pipe geschlossen. Außerhalb dieser
+  Einschränkung ist der Test erfolgreich; keine echten Zotero-Schreibdaten in Unit-Tests.
+- Echter VS-Code-Host 1.141.0: Aktivierung, Einrichtungsaktionen für Codex/Claude,
+  lokaler nativer Export, Bib-Aktualisierung, Webview und Editor-Zitation bestanden.
+- Claude Code verbindet stdio und erkennt acht Werkzeuge, aber Anmeldung ist
+  abgelaufen (`401`); Modell-/Schreibprüfung bleibt offen. Interaktiver KI-IDE-
+  Workflow und Claude Desktop sind nicht als geprüft markiert.
+- [Einrichtung](docs/MCP.md), [MCP-Prüfbericht](docs/mcp-smoke-report.json) und
+  [Extension-Host-Bericht](docs/live-smoke-report.json) dokumentieren die Grenzen.
+
+Die folgenden Abschnitte halten ältere Prüfstände unverändert fest.
 
 - Prozentzeichen in geklammerten und zitierten BibLaTeX-Feldwerten bleiben literal,
   auch in URL-Kodierungen und `@string`-Verkettungen. Parser, Feldleser und
@@ -351,7 +401,8 @@ Formulare für manuelle Literaturverwaltung.
 - Dies ist kein neuer manueller VS-Code-/Zotero-/BBT-Oberflächentest und kein
   erneuter Live-Test von Zotero-Schreibfreigaben oder der externen Rechercheanbieter.
 
-Sammlungswechsel und englische Fehlermeldungen am 11. Oktober 2026:
+Sammlungswechsel und englische Fehlermeldungen am 11. Oktober 2026
+(historisches Verhalten; Erhalt von Quellen außerhalb der Sammlung am 12. Oktober geändert):
 
 - Die neue Sammlung kann über „Set library“ bzw. das Sammlungs-Kontextmenü gewählt
   werden. Die Konfiguration ändert dabei nur die Sammlung; vorhandene Bib-Dateien
@@ -634,3 +685,194 @@ Fehlerkorrektur der Projektsperre am 11. Oktober 2026:
 - Typprüfung, Build und 110 Testfälle erfolgreich. Fälle prüfen Zuordnung,
   Stabilität, Altbestände, Kollisionen, BBT-Bibliotheksscope, Rückschreibung und
   verweigerte Freigabe. Echte BBT- und Schreib-Integration noch manuell prüfen.
+
+
+### Quellenaktualisierung und PDF-Weitergabe – 12. Oktober 2026
+
+- Elf MCP-Werkzeuge: zusätzlich `zotero_update_item`, `zotero_list_attachments` und
+  `zotero_get_attachment`. Partielle Updates erhalten ausgelassene Metadaten und
+  verwenden Schema-/Dubletten-/Scope-/Versionsprüfung sowie verifiziertes PATCH.
+- Auf ausdrücklichen Benutzerwunsch keine lokale Textextraktion oder OCR. PDFs
+  werden als geprüfter lokaler Dateipfad bzw. originale PDF-Bytes an den Agenten
+  zurückgegeben. Eingebettete PDF-Ressourcen sind auf 5 MiB begrenzt; lokale Dateien
+  auf 100 MiB. Fehlende Dateien und Fremdscope werden abgewiesen.
+- Typprüfung und 302 Tests in 31 Dateien bestanden. Rein lesender stdio-Livetest
+  gegen echtes Zotero: Anhangsliste, Dateipfad, SHA-256 und unveränderte eingebettete
+  PDF-Bytes erfolgreich; keine Quellenänderung oder Textextraktion im Livetest.
+- PDF-Lesefähigkeit und Darstellung der Ressourcen in den einzelnen KI-Oberflächen
+  gesondert prüfen; bei fehlender Unterstützung das lokale Datei-/PDF-Werkzeug verwenden.
+- Aktualisiertes VSIX erstellt. [PDF-Prüfbericht](docs/pdf-handoff-smoke-report.json).
+
+
+### Sammlungswechsel bereinigt die Projektliteratur – 12. Oktober 2026
+
+- Auf Benutzerwunsch behält „Set library“ beim Sammlungswechsel nur bereits
+  importierte bzw. zugeordnete Bib-Einträge, deren Quellen in der neuen Sammlung
+  vorhanden sind. Metadaten und persistierte Zitier-Schlüssel gemeinsamer Quellen
+  bleiben erhalten; neue Sammlungsquellen werden nicht ungefragt exportiert.
+- Entfernte Quellen verschwinden aus der aktiven .bib, der Import-/Schlüsselzuordnung
+  und den zugehörigen LaTeX-Zitationen. Gemischte Zitationen behalten verbleibende
+  Quellen und Fundstellen; Bibliografie-Verweise auf entfernte Einträge werden bereinigt.
+- Eine leere oder disjunkte neue Sammlung hinterlässt keine alten Quelleneinträge.
+  Sammlung, .bib und betroffene Projektdateien werden gemeinsam gesichert und bei
+  einem Schreibfehler zurückgesetzt. Dirty-Editoren, fehlgeschlagene Abrufe und
+  zwischenzeitliche Änderungen verhindern einen Teilwechsel.
+- Typprüfung und 311 Tests in 32 Dateien bestanden, einschließlich Schnittmenge,
+  leerer Sammlung, alter Quellenlisten, fehlender .bib und spätem Schreibkonflikt.
+- Aktualisiertes VSIX erstellt; gemeinsame Quellen durch direkten Sammlungswechsel
+  erhalten, ohne zuvor „Delete all citations“ auszuführen.
+
+## MCP-Identifier-Import und optionale Metadaten (12. Oktober 2026)
+
+- Fünfzehn MCP-Werkzeuge: Schemaabfrage, Metadatenprüfung, Identifier-Vorschau und
+  DOI-/ISBN-Import ergänzt. Nur Quellenart und Titel sind Pflicht; alle weiteren
+  Felder bleiben optional. Empfehlungen unterscheiden sich je Quellentyp.
+- Neuanlagen speichern einen festen nativen Zitierschlüssel, sofern das lokale
+  Schema ihn unterstützt, andernfalls im Zusatzfeld. Der spätere Projektimport
+  übernimmt den Schlüssel auch beim nativen Export. Bestehende Zuordnungen bleiben stabil.
+- Crossref mit DataCite-Fallback für DOI, Open Library für ISBN. Anbieterangaben
+  werden auf den Zotero-Typ abgebildet und mit Herkunft sowie Hinweisen zurückgegeben.
+  ISBN-Prüfziffern und ISBN-10/13-Identität werden geprüft; gleiche Buchausgaben
+  blockieren Neuanlagen, Kapitel mit gleicher ISBN bleiben getrennte Quellen.
+- Aufgelöste Metadaten werden je Import-Anfrage eingefroren. Wiederholungen nach
+  Antwortverlust verwenden die ursprünglichen Daten und den bestehenden Item-Key.
+- Typprüfung, Build und 327 Tests bestanden, einschließlich aller fünfzehn Werkzeuge
+  über den gebündelten stdio-Prozess, unvollständiger Quellen, nativer/älterer
+  Zitierschlüssel, ISBN-Dubletten, Overrides und verlorener Importantworten.
+- Live ausschließlich lesend geprüft: DOI `10.1038/nature12373`, ISBN
+  `9780306406157` und das native `citationKey`-Feld der laufenden Zotero-Version.
+  Die Identifier-Erweiterung hat bei der Live-Prüfung keine Zotero-Quelle angelegt.
+
+## MCP-PDF-Anhängen (12. Oktober 2026)
+
+- Sechzehntes Werkzeug `zotero_attach_pdf`: absolute lokale PDF-Pfade an bestehende
+  Quellen in der ausgewählten Sammlung anhängen, optional mit Anhangstitel.
+- Gespeicherte Kopie (`imported_file`) über Zotero-10-Datei-Autorisierung,
+  Übertragung und Registrierung. Persönliche und Gruppenbibliotheken werden
+  unterstützt; keine Änderungen an Projekt-.bib oder LaTeX.
+- PDF-Signatur und 100-MiB-Limit prüfen, gespeicherte Bytes per SHA-256 verifizieren,
+  identische verfügbare gespeicherte PDFs wiederverwenden. Andere Inhalte mit
+  gleichem Dateinamen bleiben separate Anhänge; bestehende Dateien werden nicht ersetzt.
+- Persistente Anhangsjournale sichern den vergebenen Key und Fortschritt.
+  Verlorene Antworten und unterbrochene Uploads werden ohne zweite Neuanlage
+  aufgelöst bzw. fortgesetzt. Quelle, Datei, Scope und Versionen werden nach
+  Freigaben erneut geprüft; Uploadadressen bleiben auf die lokale Zotero-Instanz beschränkt.
+- Typprüfung, Build und 344 Tests bestanden, einschließlich aller sechzehn
+  Werkzeuge über den gebündelten stdio-Prozess, binärer Dateiinhalte, Gruppen,
+  einmaliger Freigaben, Teilerfolge, Konflikte und manipulierter Journale.
+- PDF-Schreibablauf mit simuliertem Zotero geprüft; kein neuer Live-Upload in die
+  persönliche Zotero-Bibliothek vorgenommen.
+
+## Review-Korrektur F1: Quellenliste im Extension-Bundle (12. Oktober 2026)
+
+- Skriptpfad aus `context.extensionUri` statt aus dem durch Bundling veränderten
+  Modulverzeichnis bestimmen und dem HTML-Renderer übergeben. Skripte werden
+  nach ihrem tatsächlichen Dateipfad zwischengespeichert.
+- Regressionstest aktiviert das tatsächliche Extension-Bundle in einer isolierten
+  Installationsstruktur mit Leerzeichen und öffnet die Quellenliste über den
+  registrierten Befehl. Das erzeugte HTML muss den tatsächlichen Browser-Code enthalten.
+- Gegen das ursprüngliche VSIX reproduziert der Test den `ENOENT`-Pfadfehler;
+  der korrigierte Build besteht. Build, beide TypeScript-Projekte und 345 Tests erfolgreich.
+- Neues VSIX erstellt; derselbe Regressionstest besteht auch mit dessen entpacktem
+  Extension-Bundle und Browser-Skript.
+- Review-Befund F1 abgeschlossen; F2–F6 bleiben offen.
+
+## Review-Korrektur F2: Alias-Zitate migrieren (12. Oktober 2026)
+
+- `citetalias` und `citepalias` in die erkannten Zitierbefehle aufnehmen, damit
+  Definition und beide Aufrufe gemeinsam mit dem Bib-Eintrag umbenannt werden.
+- Alias-Befehle als Einzelzitate behandeln; das Endungs-`s` bezeichnet hier kein
+  Mehrfachzitat. Sichtbare Labels, Formatierungen und Notizen bleiben unverändert.
+- Regressionstests prüfen Alias-Zuordnung, Zählung/Vorschau, Kommentare und
+  literale Beispiele sowie den Schutz vor dynamischen Schlüsseln. Der registrierte
+  Migrationsbefehl aktualisiert echte temporäre Projektdateien und sichert das Original.
+- Neue Testfälle reproduzierten den Fehler vor der Korrektur. Build, beide
+  TypeScript-Projekte und 349 Tests erfolgreich.
+- Neues VSIX erstellt und seine enthaltene Alias-Migration geprüft; der
+  Quellenlisten-Bundle-Test aus F1 besteht weiterhin mit den entpackten Paketdateien.
+- Review-Befunde F1 und F2 abgeschlossen; F3–F6 bleiben offen.
+
+## Review-Korrektur F3: Schlüsseländerungen gegen Kollisionen schützen (12. Oktober 2026)
+
+- Native und Extra-Schlüsseländerungen nutzen die bestehende Kollisionsprüfung
+  für Neuanlagen, vor dem Schreiben und erneut nach der Zotero-Freigabe.
+- Andere Sammlungen, Better BibTeX, Projektzuordnungen und Bib-Einträge werden
+  berücksichtigt; eigene Schlüssel werden ausgenommen. Groß-/Kleinschreibung
+  und ein aktivierter Extra-Fallback können keine Kollision umgehen.
+- Gemeinsamer Extra-Parser für Lesen, Anlegen und Prüfen. Widersprüchliche bzw.
+  ungültige Schlüsselangaben werden abgewiesen; gewöhnliche Notizänderungen sowie
+  explizites Leeren bleiben möglich. Projektzuordnung und LaTeX werden nicht migriert.
+- Neue Regressionstests reproduzierten den Fehler vorher; Schlüsselkonflikte
+  nach Freigabe, BBT-Cache-Erneuerung, eigene Projekt-/BBT-Schlüssel und tatsächlich
+  gebündelte MCP-Aufrufe sowie implizite alte Projektzuordnungen sind geprüft.
+  Build, Typprüfung und 360 Tests erfolgreich.
+- Neues VSIX erstellt; der offizielle MCP-Client besteht die Konfliktfälle auch
+  mit dem daraus entpackten Server. Der Quellenlisten-Bundle-Test besteht weiterhin.
+- Review-Befunde F1–F3 abgeschlossen; F4–F6 bleiben offen.
+
+## Review-Korrektur F4: Abgelehnte Neuanlagen sicher wiederholen (12. Oktober 2026)
+
+- Eindeutige HTTP- bzw. Batch-Ablehnungen der Quellen- oder PDF-Metadatenneuanlage
+  setzen deren Journal auf `prepared` zurück. Anfrage-Digest und reservierter
+  Zotero-Key bleiben auch bei verweigerter Autorisierung erhalten.
+- Dieselbe Anfrage kann nach Behebung der Ursache fortgesetzt werden. Der Key
+  wird zuvor abgefragt; nur bestätigtes Fehlen erlaubt eine neue Übertragung.
+  Projektbindung, Dubletten, Schlüssel sowie PDF-Datei und Elternversion werden
+  erneut geprüft. Vorhandene passende Objekte werden übernommen.
+- Netzwerkabbrüche, HTTP 408/5xx, unbestätigte Antworten und Rücklesefehler nach
+  erfolgreichem POST behalten den Schutz vor Doppelanlagen. Alte unklare Journale
+  werden nicht automatisch zurückgesetzt; Uploads bleiben am selben Anhang.
+- Beide ursprünglichen HTTP-403-Fehler durch Regressionstests reproduziert.
+  Weitere Fälle prüfen alle Ablehnungscodes, Batch-Datensätze, erneute Freigaben,
+  Originaleingaben, Schlüssel-/Versionsschutz und eingefrorene DOI-Metadaten.
+  Build, Typprüfung und 415 Tests erfolgreich; beide Wiederholungen werden auch
+  durch den offiziellen MCP-Client über den tatsächlichen Serverprozess geprüft.
+- Aktualisiertes VSIX gebaut; MCP- und Quellenlistenprüfungen bestehen auch mit
+  den daraus entpackten Bundles. Deren Hashes stimmen mit dem getesteten Build überein.
+- Review-Befunde F1–F4 abgeschlossen; F5–F6 bleiben offen.
+
+## Review-Korrektur F5: Hochschule und Institution korrekt aus DOI-Metadaten übernehmen (12. Oktober 2026)
+
+- Crossref-Dissertationen und -Berichte nutzen die separaten Institutionsnamen
+  für `university` bzw. `institution`. Verlagsnamen ersetzen diese Angaben nicht.
+  Fehlende oder ungültige Institutionsnamen bleiben leer; mehrere gültige Namen
+  werden getrimmt und zusammengeführt.
+- DataCite-Publisher, Repositories, Autorenaffiliationen und die Rollen
+  `HostingInstitution`/`Producer` belegen keine entsprechende Hochschule oder
+  Berichtsinstitution. Diese optionalen Felder bleiben leer und können durch
+  geprüfte Overrides ergänzt werden. Die Verlagszuordnung anderer Typen bleibt erhalten.
+- Zuordnungshinweise gelangen durch das Zotero-Schema in die MCP-Rückgaben
+  `warnings` bzw. `lookupWarnings` und werden für Wiederholungen mit eingefroren.
+  Fehlende Angaben blockieren keine Neuanlage. Bestehende Quellen und alte
+  eingefrorene Importaufträge werden nicht automatisch verändert.
+- Beide Anbieterfehler vor der Korrektur reproduziert. Neue Fälle prüfen gültige,
+  fehlende, ungültige und mehrere Institutionen, unterschiedliche bibliografische
+  Rollen, DataCite-Publisher-Formate, passende Zotero-Felder, DOI in Extra,
+  manuelle Ergänzungen und Hinweise nach Prozessneustart.
+- Build, beide TypeScript-Projekte und 438 Tests erfolgreich. Der offizielle
+  MCP-Client prüft Zuordnung, Hinweise, Import und Wiederholung über den echten
+  gebündelten Serverprozess. Neues VSIX gebaut; MCP-Transport und Quellenlisten-
+  Bundle-Test bestehen auch mit den daraus entpackten Dateien. Deren Hashes und
+  die enthaltene MCP-Dokumentation stimmen mit dem geprüften Arbeitsstand überein.
+- Review-Befunde F1–F5 abgeschlossen; F6 bleibt offen.
+
+## Review-Korrektur F6: Stilwechsel nur auf echte TeX-Kommandos anwenden (12. Oktober 2026)
+
+- Paket-/Optionsbefehle, Dokumentklassen und die klassische BibTeX-Erkennung
+  verwenden die vorhandene Prüfung auf echte TeX-Kommandos. Escaped Beispiele
+  erzeugen keine Änderungen, falschen Dokumentwurzeln oder BibTeX-Konflikte.
+- Die Bibliografie-Einfügung erkennt ebenfalls nur echte `begin`/`end`-
+  Dokumentgrenzen. Doppelte Backslashes verschieben keine Einfügepositionen.
+  Kommentare und Verbatim-Beispiele bleiben geschützt; aktive Kommandos nach
+  Backslash-Paaren werden weiterhin erkannt.
+- Vor der Korrektur durch Regressionstests reproduziert. Weitere Fälle prüfen
+  alle betroffenen Befehle, Backslash-Parität, unvollständige escaped Argumente,
+  eingeschlossene Präambeln, Literalbereiche und echte BibTeX-Konflikte.
+- Der registrierte Stilbefehl ändert echte temporäre Projektdateien und sichert
+  die Originale. Escaped Text, CRLF, Bibliografie und Schlüsselzuordnung bleiben
+  erhalten. Der tatsächliche Extension-Bundle-Test führt auch diesen Befehl aus.
+- Build, beide TypeScript-Projekte und 454 Tests erfolgreich. Das aktualisierte
+  VSIX ist gebaut: Quellenliste und Stilwechsel bestehen mit der entpackten
+  Extension, der offizielle MCP-Transporttest mit dem entpackten Server.
+  Paketdateien und MCP-Dokumentation stimmen per SHA-256 mit dem geprüften Stand überein.
+- Alle sechs Review-Befunde F1–F6 abgeschlossen.

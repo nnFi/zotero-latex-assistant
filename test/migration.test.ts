@@ -23,6 +23,34 @@ test("Migration changes entry keys, project mapping, literal citations and bibli
     "\\autocite[Old2024][12]{New2025}\n\\nocite{New2025,manual}");
 });
 
+test("Alias definitions and both alias citation commands migrate with the bibliography and project mapping", () => {
+  const tex = "\\defcitealias{Old2024}{Study I}\n\\citetalias{Old2024} and \\citepalias{Old2024}\n";
+  const plan = planCitationKeyMigration(config, [{ path: "refs.bib", text: "@book{Old2024,title={Keep metadata}}" }],
+    [{ path: "main.tex", text: tex }], targets);
+  assert.deepEqual(plan.config.citationKeys, targets);
+  assert.deepEqual(bibliographyRecords(plan.changes.find((change) => change.path === "refs.bib")!.text).map((record) => record.key), ["New2025"]);
+  assert.equal(plan.changes.find((change) => change.path === "main.tex")!.text,
+    "\\defcitealias{New2025}{Study I}\n\\citetalias{New2025} and \\citepalias{New2025}\n");
+  assert.equal(plan.referenceCount, 3);
+  assert.match(migrationPreview(plan), /3 citation\/bibliography reference\(s\)/);
+});
+
+test("Alias commands are single citations: formatted labels, matching caption text and notes stay unchanged", () => {
+  const tex = "\\defcitealias{Old2024}{Study~\\emph{Old2024}}\n\\citetalias[Old2024]{Old2024}{Old2024}\n\\citepalias{Old2024}{\\emph{Old2024}}\n";
+  const result = migrateTexReferences(tex, new Map([["Old2024", "New2025"]]));
+  assert.equal(result.count, 3);
+  assert.equal(result.text,
+    "\\defcitealias{New2025}{Study~\\emph{Old2024}}\n\\citetalias[Old2024]{New2025}{Old2024}\n\\citepalias{New2025}{\\emph{Old2024}}\n");
+});
+
+test("Alias references in comments, literal examples and escaped commands are preserved", () => {
+  const before = "% \\citetalias{Old2024}\n\\verb|\\citepalias{Old2024}|\n\\begin{verbatim}\n\\defcitealias{Old2024}{Example}\n\\end{verbatim}\n\\\\citetalias{Old2024}\n";
+  const active = "\\citetalias{Old2024}\n\\citepalias{Old2024}\n";
+  const result = migrateTexReferences(before + active, new Map([["Old2024", "New2025"]]));
+  assert.equal(result.count, 2);
+  assert.equal(result.text, before + "\\citetalias{New2025}\n\\citepalias{New2025}\n");
+});
+
 test("Starred commands, multicites, global notes, volume references and comma lists migrate without changing notes", () => {
   const text = "\\cite*{Old2024,other}\n\\autocites(Old2024)(global)[Old2024][12]{Old2024}[prefix][14]{other,Old2024}\n\\volcite{2}[Old2024]{Old2024}";
   const migrated = migrateTexReferences(text, new Map([["Old2024", "New2025"]]));
@@ -105,4 +133,7 @@ test("Locally declared citation commands migrate while unresolved citation macro
   assert.equal(plan.changes.find((change) => change.path === "main.tex")?.text, "\\source[12]{New2025}");
   assert.throws(() => migrateTexReferences("\\cite{\\savedKey}", new Map([["Old2024", "New2025"]])), /Dynamic LaTeX citation arguments/);
   assert.throws(() => migrateTexReferences("\\newcommand{\\custom}[1]{\\cite{#1}}", new Map([["Old2024", "New2025"]])), /Dynamic LaTeX citation arguments/);
+  for (const command of ["defcitealias", "citetalias", "citepalias"]) {
+    assert.throws(() => migrateTexReferences(`\\${command}{\\savedKey}{Label}`, new Map([["Old2024", "New2025"]])), /Dynamic LaTeX citation arguments/);
+  }
 });

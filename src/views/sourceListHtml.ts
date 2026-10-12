@@ -6,9 +6,14 @@ import { isImportableItem } from "../biblatex/selection";
 import { escapeHtml, shell } from "./webviewHtml";
 import { attachmentBadges } from "./attachmentBadges";
 
-let compiledScript: string | undefined;
-function sourceListScript(): string {
-  return compiledScript ??= readFileSync(join(__dirname, "../../webview/sourceList.js"), "utf8");
+const compiledScripts = new Map<string, string>();
+function sourceListScript(scriptPath = join(__dirname, "../../webview/sourceList.js")): string {
+  let script = compiledScripts.get(scriptPath);
+  if (script === undefined) {
+    script = readFileSync(scriptPath, "utf8");
+    compiledScripts.set(scriptPath, script);
+  }
+  return script;
 }
 
 const typeNames: Record<string, string> = {
@@ -20,7 +25,7 @@ const typeNames: Record<string, string> = {
 };
 
 export function sourceListHtml(title: string, items: readonly ZoteroItem[], importedKeys: readonly string[], stateId: string,
-  attachments?: ReadonlyMap<string, readonly ZoteroAttachment[]>, attachmentError = "", citationKeys?: Readonly<Record<string, string>>, bibliographyError = ""): string {
+  attachments?: ReadonlyMap<string, readonly ZoteroAttachment[]>, attachmentError = "", citationKeys?: Readonly<Record<string, string>>, bibliographyError = "", scriptPath?: string): string {
   const imported = new Set(importedKeys);
   const rows = [...items].sort((a, b) => a.title.localeCompare(b.title)).map((item) => {
     const names = creatorNameList(item);
@@ -47,6 +52,6 @@ export function sourceListHtml(title: string, items: readonly ZoteroItem[], impo
     ${bibliographyError ? `<p role="alert">Project .bib could not be read: ${escapeHtml(bibliographyError)}. Existing-source markers are unavailable.</p>` : ""}
     <div class="table-scroll"><table aria-label="Zotero sources"><thead><tr><th class="check"><input id="all" type="checkbox" aria-label="Select all visible sources"></th><th>Title</th><th>Creators</th><th>Item type</th><th>Attachments</th><th><span class="sr-only">Action</span></th></tr></thead><tbody>${rows}</tbody></table></div>
     <p id="empty" class="muted" ${items.length ? "hidden" : ""}>No sources available.</p>`;
-  return shell(title, body, sourceListScript(),
+  return shell(title, body, sourceListScript(scriptPath),
   `body{max-width:none;padding:0 20px 20px;background:var(--vscode-editor-background)}.list-header{position:sticky;top:0;background:var(--vscode-editor-background);padding:18px 0 8px;z-index:2}.list-header h1{margin:0 0 10px}.toolbar{display:flex;flex-wrap:wrap;gap:8px}.toolbar button{margin:0}.secondary{color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground)}.filter{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.filter label{margin:0}.filter input{width:320px;max-width:100%}#selection{color:var(--vscode-descriptionForeground);white-space:nowrap}#status:empty{display:none}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;text-align:left;table-layout:auto}th{color:var(--vscode-descriptionForeground);font-weight:600;border-bottom:1px solid var(--vscode-panel-border);padding:10px}td{padding:8px 10px;border-bottom:1px solid var(--vscode-panel-border);vertical-align:middle}tbody tr:nth-child(even){background:var(--vscode-list-inactiveSelectionBackground)}tbody tr:hover{background:var(--vscode-list-hoverBackground)}tr[hidden]{display:none}.check{width:28px}.check input{width:16px;height:16px;accent-color:var(--vscode-focusBorder);padding:0}.title-link{display:block;text-align:left;color:var(--vscode-foreground);background:none;padding:0;margin:0;line-height:1.5}.title-link:hover{text-decoration:underline;color:var(--vscode-textLink-foreground)}.authors{width:22%}.more-authors{display:block;margin-top:4px;font-size:12px;color:var(--vscode-descriptionForeground)}.type{width:140px}.attachments{min-width:110px}.attachment-badge{display:inline-flex;align-items:center;gap:4px;margin:2px 8px 2px 0;font-size:12px;white-space:nowrap}.attachment-unknown{color:var(--vscode-descriptionForeground)}.action{width:220px;white-space:nowrap}.action button{margin:0 6px 0 0;font-size:12px}.action button:last-child{margin-right:0}.imported{display:block;font-size:11px;color:var(--vscode-descriptionForeground)}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}`);
 }

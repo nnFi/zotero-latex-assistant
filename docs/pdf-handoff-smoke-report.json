@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-10-12T10:01:56.771Z",
+  "readOnly": true,
+  "localExtraction": false,
+  "checks": [
+    "zotero_get_selected_collection",
+    "zotero_list_attachments",
+    "zotero_get_attachment",
+    "zotero_get_attachment"
+  ],
+  "success": true,
+  "toolCount": 11,
+  "pathVerified": true,
+  "sizeBytes": 2354355,
+  "embeddedPdfVerified": true
+}

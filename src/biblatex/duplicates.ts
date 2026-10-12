@@ -14,7 +14,7 @@ export function normalizedDoi(value: string | undefined): string | undefined {
   return /^10\.\d{4,9}\/\S+$/i.test(doi) ? doi.toLowerCase() : undefined;
 }
 
-function normalizedText(value: string): string {
+export function normalizedText(value: string): string {
   return value.replace(/\\([_%&#])/g, "$1").replace(/\\(?:["'`^~=.uvHc])\s*\{?([\p{L}])\}?/gu, "$1")
     .replace(/\\(?:emph|textit|textbf|textsc|textnormal|textrm|textsf|texttt|mkbibemph|mkbibitalic|mkbibbold)\s*/g, "")
     .replace(/[{}]/g, "").normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase("en").replace(/[^\p{L}\p{N}]+/gu, " ").trim();

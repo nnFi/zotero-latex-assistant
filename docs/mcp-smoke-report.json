@@ -1,0 +1,134 @@
+{
+  "date": "2026-10-12",
+  "sdk": {
+    "server": "@modelcontextprotocol/server@2.3.1",
+    "client": "@modelcontextprotocol/client@2.3.1",
+    "transport": "stdio",
+    "runtimeDependenciesBundled": true
+  },
+  "zotero": {
+    "version": "10.0.6",
+    "apiVersion": "3",
+    "serverId": "QG5fY3zqVygP"
+  },
+  "scope": {
+    "project": "/tmp/zotero-mcp-live",
+    "library": {
+      "type": "user",
+      "id": 0
+    },
+    "collection": {
+      "name": "TestSammlungMCP",
+      "key": "MWX6V9GA"
+    },
+    "humanAuthorizedLiveWrites": true
+  },
+  "codex": {
+    "client": "installed Codex CLI",
+    "readFirst": {
+      "tool": "zotero_get_selected_collection",
+      "success": true
+    },
+    "acceptance": {
+      "success": true,
+      "itemKey": "KJ6NE8XL",
+      "title": "MCP-TEST 2026-10-12 Zotero LaTeX Assistant acceptance",
+      "syntheticSource": true,
+      "createdVersion": 7,
+      "searchExactTitleMatches": 1,
+      "requestId": "zotero-mcp-acceptance-20261012-01",
+      "retryResult": "already-created",
+      "sourcesCreated": 1,
+      "trashVersion": 8,
+      "finalDeleteResult": "already-trashed",
+      "verifiedTrash": true,
+      "otherCollectionKeys": [],
+      "projectCitationFiles": [],
+      "projectFilesModified": false
+    },
+    "observations": [
+      "Local items/new returned 404; validation now uses itemTypeFields and itemTypeCreatorTypes.",
+      "Zotero reordered creator JSON properties; verification now compares data structurally.",
+      "A trash attempt timed out; the item was read again before continuing.",
+      "PATCH deleted=1 stored deleted=true; trash itemKey filtering returned no matches in Zotero 10.0.6. Verification now uses a paginated trash list.",
+      "After fixing verification, Codex confirmed the same item as already-trashed at version 8 without a second source creation."
+    ],
+    "version": "0.162.0-alpha.17.2"
+  },
+  "claude": {
+    "client": "Claude Code 2.1.136",
+    "stdioConnected": true,
+    "discoveredToolCount": 8,
+    "modelToolCallVerified": false,
+    "writeAcceptanceVerified": false,
+    "reason": "401: OAuth access token expired; re-authentication required."
+  },
+  "automated": {
+    "typeScriptExtensionAndServer": true,
+    "typeScriptWebview": true,
+    "testFiles": 30,
+    "passedTestCases": 289,
+    "failedTestCases": 0,
+    "realStdioSdkTestWithSimulatedZotero": true
+  },
+  "extensionHost": {
+    "success": true,
+    "vscodeVersion": "1.141.0",
+    "checks": [
+      "Extension activates in the installed VS Code host",
+      "Expected extension commands are registered",
+      "Real extension commands write project-scoped Codex and Claude MCP configurations pointing at the bundled server",
+      "Real Zotero connection, item list and native BibLaTeX export are readable",
+      "Registered update command writes real native metadata with the existing stable project key",
+      "Registered source-list command creates its real VS Code webview",
+      "Citation preparation cancellation leaves the real document unchanged; insertion uses the real editor and saves successfully"
+    ],
+    "limitations": [
+      "Native exporter only; no Zotero writes or authorization prompts",
+      "No manual dialog/button or Better BibTeX integration test"
+    ]
+  },
+  "package": {
+    "file": "zotero-latex-assistant-0.1.0.vsix",
+    "created": true,
+    "extractedServerStartVerified": true,
+    "allEightToolsVerifiedFromExtractedBundleWithSimulatedZotero": true,
+    "extractedServerRealZoteroReadVerified": true,
+    "externalNodeModulesRequired": false,
+    "readOnlySmoke": {
+      "timestamp": "2026-10-12T07:31:10.105Z",
+      "client": "official MCP TypeScript client",
+      "project": "/tmp/zotero-mcp-live",
+      "writeRequested": false,
+      "checks": [
+        "zotero_get_selected_collection",
+        "zotero_search"
+      ],
+      "success": true,
+      "scope": {
+        "project": "/tmp/zotero-mcp-live",
+        "library": {
+          "type": "user",
+          "id": 0
+        },
+        "serverId": "QG5fY3zqVygP",
+        "collection": {
+          "library": {
+            "type": "user",
+            "id": 0
+          },
+          "key": "MWX6V9GA",
+          "name": "TestSammlungMCP",
+          "parentKey": null
+        },
+        "writeReady": true
+      }
+    }
+  },
+  "open": [
+    "Interactive Codex IDE tool call and full manual UI workflow.",
+    "Claude model tool calls and write scenario after account re-authentication.",
+    "Claude Desktop configuration/use.",
+    "Installed VSIX UI workflow (development-host setup actions have been tested)."
+  ]
+}

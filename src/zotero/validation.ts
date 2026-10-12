@@ -29,3 +29,8 @@ export function optionalString(data: Record<string, unknown>, field: string): st
   }
   return value;
 }
+
+/** Zotero local JSON uses boolean true; Web API responses may use numeric 1. */
+export function isTrashedData(data: Record<string, unknown>): boolean {
+  return data.deleted === true || data.deleted === 1;
+}

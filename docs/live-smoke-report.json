@@ -4,6 +4,7 @@
   "checks": [
     "Extension activates in the installed VS Code host",
     "Expected extension commands are registered",
+    "Real extension commands write project-scoped Codex and Claude MCP configurations pointing at the bundled server",
     "Real Zotero connection, item list and native BibLaTeX export are readable",
     "Registered update command writes real native metadata with the existing stable project key",
     "Registered source-list command creates its real VS Code webview",

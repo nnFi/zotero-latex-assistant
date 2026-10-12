@@ -27,6 +27,8 @@ interface ListSelection {
 
 export function registerSourceList(context: vscode.ExtensionContext, projects: ProjectController, citations: CitationController): void {
   const panels = new Map<string, { panel: vscode.WebviewPanel; serverId: string | undefined }>();
+  // Resolve from the installed extension root; bundling changes module-local __dirname.
+  const scriptPath = vscode.Uri.joinPath(context.extensionUri, "dist", "webview", "sourceList.js").fsPath;
   async function openList(selection?: ListSelection): Promise<void> {
     const folder = await projects.folder();
     if (!folder) return;
@@ -91,7 +93,7 @@ export function registerSourceList(context: vscode.ExtensionContext, projects: P
         ...presence.citationKeys } : undefined;
       await readCurrent();
       if (!disposed && version === renderVersion) panel.webview.html = sourceListHtml(scope!.title, items, presence.itemKeys,
-        `${stateId}:${sameLibrary ? current.bibFile : ""}`, displayedAttachments, displayedAttachmentError, keyNames, bibliographyError);
+        `${stateId}:${sameLibrary ? current.bibFile : ""}`, displayedAttachments, displayedAttachmentError, keyNames, bibliographyError, scriptPath);
     }
     async function load(refresh = false): Promise<void> {
       const started = Date.now();

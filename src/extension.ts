@@ -4,6 +4,7 @@ import { registerZoteroTree } from "./views/zoteroTree";
 import { ProjectController } from "./views/projectCommands";
 import { registerDoiSearch } from "./views/doiSearch";
 import { registerSourceList } from "./views/sourceList";
+import { registerMcpCommands } from "./views/mcpCommands";
 import { CitationController } from "./views/citationCommands";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -13,6 +14,7 @@ export function activate(context: vscode.ExtensionContext): void {
   registerZoteroTree(context, output);
   const projects = new ProjectController(context, output);
   registerDoiSearch(context, projects);
+  registerMcpCommands(context, projects);
   const citations = new CitationController(context, projects);
   registerSourceList(context, projects, citations);
   void projects.startup();

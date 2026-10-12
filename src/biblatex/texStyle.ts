@@ -1,5 +1,5 @@
 import { validateBiblatexStyle } from "./styles";
-import { texCode, texArgument } from "./texSyntax";
+import { texCode, texArgument, texCommandMatches as commandMatches } from "./texSyntax";
 import { planBiblatexResources, reachableTexSources } from "./texResources";
 
 export interface TexSource { readonly path: string; readonly text: string }
@@ -31,10 +31,10 @@ export function planBiblatexStyle(sources: readonly TexSource[], style: string, 
   const parsed = sources.map((source) => ({ source, code: codeOnly(source.text),
     edits: [] as { start: number; end: number; text: string }[], loads: false }));
   for (const file of parsed) {
-    if (/\\bibliographystyle\s*\{/.test(file.code)) {
+    if (commandMatches(file.code, /\\bibliographystyle\s*\{/g).length) {
       throw new Error(`${file.source.path} uses classic BibTeX. Convert it to BibLaTeX before selecting a BibLaTeX style.`);
     }
-    for (const match of file.code.matchAll(/\\(usepackage|RequirePackage|PassOptionsToPackage|ExecuteBibliographyOptions)\b/g)) {
+    for (const match of commandMatches(file.code, /\\(usepackage|RequirePackage|PassOptionsToPackage|ExecuteBibliographyOptions)\b/g)) {
       const command = match[1]!;
       const offset = match.index! + match[0].length;
       if (command === "ExecuteBibliographyOptions") {
@@ -56,11 +56,11 @@ export function planBiblatexStyle(sources: readonly TexSource[], style: string, 
     }
   }
   for (const file of parsed) {
-    const match = /\\documentclass\b/.exec(file.code);
+    const match = commandMatches(file.code, /\\documentclass\b/g)[0];
     if (!match) continue;
     const reachable = new Set(reachableTexSources(file.source, sources).map((source) => source.path));
     const dependencies = parsed.filter((dependency) => reachable.has(dependency.source.path));
-    const offset = match.index + match[0].length;
+    const offset = match.index! + match[0].length;
     const optional = argument(file.code, offset, "[", "]");
     const cls = argument(file.code, optional?.end ?? offset, "{", "}");
     if (!cls) throw new Error(`${file.source.path}: cannot find the document class argument.`);

@@ -10,7 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { ProjectController } from "../src/views/projectCommands";
 import type * as vscode from "vscode";
 import type { ProjectConfig, ZoteroItem } from "../src/shared/types";
-import { readProjectConfig, saveProjectConfig, withProjectLibrary } from "../src/config/project";
+import { readProjectConfig, saveProjectConfig } from "../src/config/project";
 import { bibEntries, mergeBibliography } from "../src/biblatex/importer";
 import type { SecretStore } from "../src/zotero/writer";
 import { insertPreparedCitation } from "../src/biblatex/citations";
@@ -29,7 +29,7 @@ function controller(root: string, fetch: typeof globalThis.fetch, showMessage: (
   const fakeVscode = { workspace: { workspaceFolders: [folder], textDocuments: documents,
     createFileSystemWatcher: () => ({ onDidChange: subscription, onDidCreate: subscription, onDidDelete: subscription }),
     onDidChangeWorkspaceFolders: subscription,
-    findFiles: async () => (await readdir(root, { recursive: true })).filter((file) => /\.(tex|ltx|sty|cls)$/.test(file)
+    findFiles: async (pattern: { pattern: string }) => (await readdir(root, { recursive: true })).filter((file) => (pattern.pattern.includes("bib") ? /\.(bib|tex|ltx|sty|cls)$/ : /\.(tex|ltx|sty|cls)$/).test(file)
       && !/(^|[\\/])(node_modules|\.git|\.zotero|dist|build|out)([\\/]|$)/.test(file)).map((file) => ({ fsPath: path.join(root, file) })),
     getConfiguration: (_section: string, resource: unknown) => ({ update: async (key: string, value: unknown, target: unknown) => {
       assert.equal(resource, folder.uri);
@@ -43,7 +43,7 @@ function controller(root: string, fetch: typeof globalThis.fetch, showMessage: (
       withProgress: async (_options: unknown, task: () => Promise<unknown>) => task(), showInformationMessage: showMessage,
       showErrorMessage: showMessage, showWarningMessage: showMessage, showQuickPick: async () => undefined },
     commands: { registerCommand: subscription }, StatusBarAlignment: { Left: 1 }, ProgressLocation: { Notification: 15 },
-    ConfigurationTarget: { WorkspaceFolder: 3 }, RelativePattern: class {} };
+    ConfigurationTarget: { WorkspaceFolder: 3 }, RelativePattern: class { constructor(readonly base: unknown, readonly pattern: string) {} } };
   const filename = path.join(__dirname, "../src/views/projectCommands.js");
   const nativeRequire = createRequire(filename);
   const module = { exports: {} as { ProjectController: typeof ProjectController } };
@@ -371,11 +371,10 @@ test("An empty selection from a foreign-library list cannot delete a matching pr
   });
 });
 
-test("After a collection change, old sources survive new imports, citing and manual metadata updates", async () => {
+test("After a collection change, sources outside the selected collection are removed and cannot be reintroduced through an old list", async () => {
   await inProject(async (root) => {
     const added = { ...item, key: "ITEM0002" };
     const tracked = { ...config, importedItemKeys: [item.key], citationKeys: { ITEM0001: "Old2024" } };
-    const switched = withProjectLibrary(tracked, item.library, "NEWCOL01");
     await saveProjectConfig(root, tracked);
     const original = mergeBibliography("", ["@book{Old2024,title={Preserved custom fields}}"]);
     await writeFile(path.join(root, config.bibFile), original);
@@ -393,22 +392,22 @@ test("After a collection change, old sources survive new imports, citing and man
       return new Response(JSON.stringify([{ key: added.key, data: { itemType: "book", title: "New source" } }]));
     });
     await projects.connect({ data: { kind: "collection", collection: { library: item.library, key: "NEWCOL01", name: "New collection", parentKey: null } } });
-    assert.deepEqual(await readProjectConfig(root), switched);
-    assert.equal(await readFile(path.join(root, config.bibFile), "utf8"), original);
+    assert.deepEqual(await readProjectConfig(root), { ...tracked, collectionKey: "NEWCOL01", importedItemKeys: [], citationKeys: {} });
+    assert.deepEqual(bibEntries(await readFile(path.join(root, config.bibFile), "utf8")), []);
     await projects.synchronizeItems([added], [added], folder);
     let text = await readFile(path.join(root, config.bibFile), "utf8");
-    assert.deepEqual(bibEntries(text).map((entry) => entry.key), ["Old2024", "New2025"]);
-    assert.match(text, /Preserved custom fields/);
+    assert.deepEqual(bibEntries(text).map((entry) => entry.key), ["New2025"]);
+    assert.doesNotMatch(text, /Preserved custom fields/);
     assert.deepEqual(exports, ["/api/users/0/items/ITEM0002"]);
-    await projects.prepareCitation([item], folder);
+    await assert.rejects(projects.prepareCitation([item], folder), /selected source/);
     assert.deepEqual(exports, ["/api/users/0/items/ITEM0002"]);
     await projects.updateBib();
     text = await readFile(path.join(root, config.bibFile), "utf8");
-    assert.match(text, /Latest old metadata/);
-    assert.deepEqual(bibEntries(text).map((entry) => entry.key), ["Old2024", "New2025"]);
+    assert.doesNotMatch(text, /Latest old metadata/);
+    assert.deepEqual(bibEntries(text).map((entry) => entry.key), ["New2025"]);
     await projects.synchronizeItems([], [added], folder);
-    assert.deepEqual(bibEntries(await readFile(path.join(root, config.bibFile), "utf8")).map((entry) => entry.key), ["Old2024"]);
-    assert.deepEqual((await readProjectConfig(root))?.citationKeys, { ITEM0001: "Old2024" });
+    assert.deepEqual(bibEntries(await readFile(path.join(root, config.bibFile), "utf8")), []);
+    assert.deepEqual((await readProjectConfig(root))?.citationKeys, {});
   });
 });
 
@@ -1058,5 +1057,66 @@ test("A late synchronization conflict rolls back LaTeX citations together with b
     assert.equal(await readFile(path.join(root, "main.tex"), "utf8"), manuscript);
     assert.equal(await readFile(path.join(root, config.bibFile), "utf8"), bib);
     assert.deepEqual(await readProjectConfig(root), tracked);
+  });
+});
+
+
+test("Switching collections saves bibliography, selective citations and key tracking together, preserving shared sources", async () => {
+  await inProject(async (root) => {
+    const tracked = { ...config, importedItemKeys: [item.key, "ITEM0002"], citationKeys: { ITEM0001: "Removed", ITEM0002: "Shared" } };
+    await saveProjectConfig(root, tracked);
+    const original = mergeBibliography("", ["@book{Removed,title={Old}}", "@book{Shared,title={Custom metadata}}"]);
+    await writeFile(path.join(root, config.bibFile), original);
+    const manuscript = String.raw`Text \parencite[see][14]{Removed,Shared}.`;
+    await writeFile(path.join(root, "main.tex"), manuscript);
+    const { projects } = controller(root, async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/") return new Response("", { headers: { "Zotero-API-Version": "3" } });
+      assert.equal(url.pathname, "/api/users/0/collections/NEWCOL01/items/top");
+      return new Response(JSON.stringify([{ key: "ITEM0002", data: { itemType: "book", title: "Current source" } }]));
+    });
+    await projects.connect({ data: { kind: "collection", collection: { library: item.library, key: "NEWCOL01", name: "New", parentKey: null } } });
+    assert.deepEqual(bibEntries(await readFile(path.join(root, config.bibFile), "utf8")).map((entry) => entry.key), ["Shared"]);
+    assert.match(await readFile(path.join(root, config.bibFile), "utf8"), /Custom metadata/);
+    assert.equal(await readFile(path.join(root, "main.tex"), "utf8"), String.raw`Text \parencite[see][14]{Shared}.`);
+    assert.deepEqual((await readProjectConfig(root))?.citationKeys, { ITEM0002: "Shared" });
+    const backups = await readdir(path.join(root, ".zotero/backups"));
+    assert.equal(await readFile(path.join(root, ".zotero/backups", backups[0]!, config.bibFile), "utf8"), original);
+    assert.equal(await readFile(path.join(root, ".zotero/backups", backups[0]!, "main.tex"), "utf8"), manuscript);
+  });
+});
+
+test("Collection switches reject dirty files, concurrent edits and failed list requests without changing the binding", async () => {
+  for (const mode of ["dirty", "changed", "unavailable"] as const) await inProject(async (root) => {
+    const tracked = { ...config, importedItemKeys: [item.key], citationKeys: { ITEM0001: "Old" } };
+    await saveProjectConfig(root, tracked);
+    const original = "@book{Old,title={Preserve on failure}}";
+    await writeFile(path.join(root, config.bibFile), original);
+    const { projects, markDirty } = controller(root, async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/") return new Response("", { headers: { "Zotero-API-Version": "3" } });
+      if (mode === "unavailable") return new Response("", { status: 404 });
+      if (mode === "changed") await writeFile(path.join(root, config.bibFile), original + "\n% Changed by user");
+      return new Response("[]");
+    });
+    if (mode === "dirty") markDirty(config.bibFile);
+    await assert.rejects(projects.connect({ data: { kind: "collection", collection: { library: item.library, key: "NEWCOL01", name: "New", parentKey: null } } }));
+    assert.deepEqual(await readProjectConfig(root), tracked);
+    assert.equal(await readFile(path.join(root, config.bibFile), "utf8"), original + (mode === "changed" ? "\n% Changed by user" : ""));
+  });
+});
+
+test("A late collection-switch write conflict restores bibliography and project binding together", async () => {
+  await inProject(async (root) => {
+    const tracked = { ...config, importedItemKeys: [item.key], citationKeys: { ITEM0001: "Old" } };
+    await saveProjectConfig(root, tracked);
+    const original = "@book{Old,title={Preserve on rollback}}";
+    await writeFile(path.join(root, config.bibFile), original);
+    await symlink(config.bibFile, path.join(root, "rollback-alias.bib"));
+    const { projects } = controller(root, async (input) => new URL(String(input)).pathname === "/api/"
+      ? new Response("", { headers: { "Zotero-API-Version": "3" } }) : new Response("[]"), undefined, undefined, "native", true);
+    await assert.rejects(projects.connect({ data: { kind: "collection", collection: { library: item.library, key: "NEWCOL01", name: "New", parentKey: null } } }), /in the meantime/);
+    assert.deepEqual(await readProjectConfig(root), tracked);
+    assert.equal(await readFile(path.join(root, config.bibFile), "utf8"), original);
   });
 });

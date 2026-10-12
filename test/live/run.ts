@@ -29,10 +29,19 @@ export async function run(): Promise<void> {
     assert.equal(extension.isActive, true);
     checks.push("Extension activates in the installed VS Code host");
     const commands = await vscode.commands.getCommands(true);
-    for (const command of ["openSourceList", "updateBib", "insertCitation", "selectBibFile", "deleteAllCitations"]) {
+    for (const command of ["openSourceList", "updateBib", "insertCitation", "selectBibFile", "deleteAllCitations", "setupCodex", "setupClaude"]) {
       assert.ok(commands.includes(`zoteroLatexAssistant.${command}`));
     }
     checks.push("Expected extension commands are registered");
+    await vscode.commands.executeCommand("zoteroLatexAssistant.setupCodex");
+    const codexText = await readFile(path.join(folder!.uri.fsPath, ".codex", "config.toml"), "utf8");
+    assert.ok(codexText.includes("[mcp_servers.zotero_latex_assistant]"));
+    assert.ok(codexText.includes(folder!.uri.fsPath));
+    assert.ok(codexText.includes("server.cjs"));
+    await vscode.commands.executeCommand("zoteroLatexAssistant.setupClaude");
+    const claudeConfig = JSON.parse(await readFile(path.join(folder!.uri.fsPath, ".mcp.json"), "utf8"));
+    assert.equal(claudeConfig.mcpServers.zotero_latex_assistant.args[2], folder!.uri.fsPath);
+    checks.push("Real extension commands write project-scoped Codex and Claude MCP configurations pointing at the bundled server");
     const connection = await new ZoteroClient().checkConnection();
     const client = new ZoteroClient({ ...(connection.serverId ? { serverId: connection.serverId } : {}) });
     const library = { type: "user" as const, id: 0 };

@@ -91,17 +91,17 @@ export function planBiblatexResources(sources: readonly TexSource[], previousBib
     const loads = dependencies.some((dependency) => commandMatches(texCode(dependency.text), /\\(?:usepackage|RequirePackage)\s*(?:\[[\s\S]*?\])?\s*\{[^}]*\bbiblatex\b[^}]*\}/g).length);
     if (!loads) continue;
     const code = texCode(root.text);
-    const begin = /\\begin\s*\{document\}/.exec(code);
-    const end = /\\end\s*\{document\}/.exec(code);
+    const begin = commandMatches(code, /\\begin\s*\{document\}/g)[0];
+    const end = commandMatches(code, /\\end\s*\{document\}/g)[0];
     if (!begin || !end) throw new Error(`${root.path}: a complete document environment is required to add bibliography references.`);
     const newline = root.text.includes("\r\n") ? "\r\n" : "\n";
     const edits: { start: number; text: string }[] = [];
     if (!dependencies.some((dependency) => resources(dependency).some((ref) => matchesResource(ref.name, bibFile, root.path)
       || matchesResource(ref.name, bibFile, "main.tex")))) {
-      edits.push({ start: begin.index, text: `\\addbibresource{${path.posix.relative(path.posix.dirname(root.path), bibFile)}}${newline}` });
+      edits.push({ start: begin.index!, text: `\\addbibresource{${path.posix.relative(path.posix.dirname(root.path), bibFile)}}${newline}` });
     }
     if (!dependencies.some((dependency) => commandMatches(texCode(dependency.text), /\\printbibliography\b/g).length)) {
-      edits.push({ start: end.index, text: `\\printbibliography${newline}` });
+      edits.push({ start: end.index!, text: `\\printbibliography${newline}` });
     }
     for (const edit of edits.sort((a, b) => b.start - a.start)) root.text = root.text.slice(0, edit.start) + edit.text + root.text.slice(edit.start);
   }

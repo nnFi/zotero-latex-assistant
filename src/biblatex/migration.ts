@@ -18,7 +18,7 @@ const referenceFields = new Set(["crossref", "xref", "related", "entryset", "xda
 export const citationCommands = new Set([
   "cite", "autocite", "parencite", "textcite", "footcite", "smartcite", "supercite", "footcitetext",
   "citeauthor", "citetitle", "citeyear", "citeyearpar", "citedate", "citeurl", "fullcite", "footfullcite", "nocite",
-  "citefield", "citename", "citelist", "entrydata", "defcitealias", "defbibentryset",
+  "citefield", "citename", "citelist", "entrydata", "defcitealias", "citetalias", "citepalias", "defbibentryset",
   "textcquote", "blockcquote", "foreigntextcquote", "foreignblockcquote",
   "citet", "citep", "citealt", "citealp", "Citet", "Citep", "Citealt", "Citealp", "Cite", "Autocite", "Parencite", "Textcite", "Footcite", "Smartcite",
   "Citeauthor", "Citetitle", "Citeyear", "Citeyearpar", "Citedate", "Citeurl", "Fullcite", "Footfullcite",
@@ -97,7 +97,8 @@ export function migrateTexReferences(text: string, replacements: ReadonlyMap<str
       if (!first) continue;
       position = first.end;
     }
-    const multiple = declaredCommands.get(name) ?? name.endsWith("s");
+    // Alias commands end in 's' but take one key argument; their labels are ordinary text.
+    const multiple = declaredCommands.get(name) ?? (name.toLowerCase().endsWith("cites") || name === "footcitetexts");
     for (;;) {
       let optional;
       for (;;) {

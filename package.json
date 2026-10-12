@@ -16,7 +16,7 @@
   "extensionKind": [
     "workspace"
   ],
-  "main": "./dist/src/extension.js",
+  "main": "./dist/extension.cjs",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -29,12 +29,14 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p . && tsc -p tsconfig.webview.json",
+    "compile": "tsc -p . && tsc -p tsconfig.webview.json && node scripts/bundle.cjs",
     "watch": "node scripts/watch.cjs",
     "check": "tsc -p . --noEmit && tsc -p tsconfig.webview.json --noEmit",
     "test": "npm run compile && node --test dist/test/*.test.js",
     "test:live": "npm run compile && node scripts/live-smoke.cjs",
-    "vscode:prepublish": "npm run compile"
+    "vscode:prepublish": "npm run compile",
+    "package": "npm run compile && vsce package --no-dependencies --allow-missing-repository --no-rewrite-relative-links --skip-license",
+    "test:mcp:live": "npm run compile && node scripts/mcp-smoke.cjs"
   },
   "contributes": {
     "viewsContainers": {
@@ -149,6 +151,16 @@
         "title": "Delete all citations",
         "category": "Zotero",
         "icon": "$(trash)"
+      },
+      {
+        "command": "zoteroLatexAssistant.setupCodex",
+        "title": "Set up Codex MCP connection",
+        "category": "Zotero"
+      },
+      {
+        "command": "zoteroLatexAssistant.setupClaude",
+        "title": "Set up Claude MCP connection",
+        "category": "Zotero"
       }
     ],
     "menus": {
@@ -296,6 +308,12 @@
             "Explicitly use Zotero's native BibLaTeX exporter instead."
           ],
           "description": "Exporter for new sources and manual metadata updates. Better BibLaTeX requires Better BibTeX for Zotero; no silent fallback. Existing project citation keys stay unchanged."
+        },
+        "zoteroLatexAssistant.nodePath": {
+          "type": "string",
+          "default": "node",
+          "scope": "machine",
+          "description": "Node.js 20+ executable used by Codex and Claude to start the bundled Zotero MCP server."
         }
       }
     },
@@ -307,8 +325,16 @@
     ]
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
     "@types/node": "^20.0.0",
     "@types/vscode": "~1.95.0",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.28.2",
     "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "smol-toml": "1.9.1",
+    "zod": "4.6.6"
   }
 }

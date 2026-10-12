@@ -1,7 +1,7 @@
 import { ZoteroError } from "../shared/errors";
 import type { LibraryRef, ZoteroCreator, ZoteroItem } from "../shared/types";
 import { isRecord, libraryPrefix, optionalString, validateKey } from "./validation";
-import { validateCitationKey } from "../biblatex/keys";
+import { extraCitationKeys, validateCitationKey } from "../biblatex/keys";
 
 export function itemsPath(library: LibraryRef, collectionKey?: string): string {
   const prefix = libraryPrefix(library);
@@ -29,10 +29,11 @@ export function parseItem(value: unknown, library: LibraryRef): ZoteroItem {
       name: optionalString(creator, "name"),
     };
   });
-  const pinned = typeof data.extra === "string"
-    ? [...data.extra.matchAll(/^\s*Citation Key\s*:\s*(.*?)\s*$/gmi)].map((match) => match[1]!) : [];
+  const pinned = typeof data.extra === "string" ? extraCitationKeys(data.extra) : [];
   let citationKey: string | undefined;
-  if (pinned.length && new Set(pinned).size === 1) {
+  if (typeof data.citationKey === "string" && data.citationKey) {
+    try { citationKey = validateCitationKey(data.citationKey); } catch { /* Keep malformed metadata browsable. */ }
+  } else if (pinned.length && new Set(pinned).size === 1) {
     try { citationKey = validateCitationKey(pinned[0]); } catch { /* Invalid extra metadata must not prevent browsing. */ }
   }
   return {
@@ -43,7 +44,8 @@ export function parseItem(value: unknown, library: LibraryRef): ZoteroItem {
       || (data.itemType === "note" ? "Note" : "Untitled"),
     creators,
     date: optionalString(data, "date"),
-    doi: optionalString(data, "DOI"),
+    doi: optionalString(data, "DOI") || (typeof data.extra === "string" ? data.extra.match(/^\s*DOI\s*:\s*(.+)$/mi)?.[1]?.trim() ?? "" : ""),
+    ...(typeof data.ISBN === "string" ? { isbn: data.ISBN } : {}),
     url: optionalString(data, "url"),
     ...(citationKey ? { citationKey } : {}),
   };

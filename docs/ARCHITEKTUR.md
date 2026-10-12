@@ -9,17 +9,18 @@ Stand: 12. Oktober 2026. Der Projektauftrag ist in
 | --- | --- | --- |
 | `src/extension.ts`, `src/views/` | VS-Code-Oberfläche und Befehle | Aktivierung, Zotero-Seitenleiste und Befehle vorhanden |
 | `src/config/` | Maschineneinstellungen und `.zotero/config.json` | Validierte Projektzuordnung, Dateischutz und Bib-Erkennung |
-| `src/zotero/` | Transportneutraler Zugriff auf Zotero | Leseclient, Detail-/Exportabruf, CSL-Dateiliste, Anhangsmetadaten und vorbereiteter KI-Schreibadapter |
+| `src/zotero/` | Transportneutraler Zugriff auf Zotero | Leseclient, Detail-/Exportabruf, CSL-Dateiliste, Anhangsmetadaten, lokale Autorisierung, Neuanlage, partielles Update, Papierkorb und PDF-Dateiweitergabe |
 | `src/biblatex/` | Export, sichere Dateizusammenführung und Zitationen | Nativer Export, geschützter Import und Einfügen von Zitationen |
-| `src/pdf/` | Lokale PDF-Verarbeitung mit tatsächlichen Seitenangaben | Vorbereitet |
+| `src/pdf/` | Historische Platzhalter | Keine lokale Textextraktion auf Benutzerwunsch; Agent erhält PDF-Dateien |
 | `src/research/` | Externe Recherche und Metadatenverifikation | Crossref-DOI-/Titelsuche mit Metadatenvorschau |
 | `src/shared/` | Typen und einheitliche Fehler | Vorhanden |
-| `mcp/` | Eigenständiger Prozess über stdio | Vorbereitet |
+| `mcp/` | Eigenständiger Prozess über stdio | Elf Werkzeuge für Codex, Claude und andere lokale MCP-Clients |
 
-Die Extension enthält keine Laufzeitbibliotheken. Für Phase 1 reichen Node.js-
-`fetch`, VS-Code-Komponenten und TypeScript. Entwicklungsabhängigkeiten werden
-mit einer npm-Lockdatei festgehalten. Zusätzliche Bibliotheken kommen erst bei
-der Umsetzung ihrer Funktionen hinzu.
+Extension und MCP-Server verwenden das offizielle MCP-SDK 2.3.1, Zod und einen
+TOML-Parser für die Codex-Einrichtung. `scripts/bundle.cjs` bündelt alle benötigten
+Laufzeitbibliotheken in `dist/extension.cjs` und `dist/mcp/server.cjs`; ausschließlich
+VS Code bleibt beim Extension-Einstieg extern. Das VSIX enthält beide Programme,
+Webview und Ressourcen. Entwicklungsabhängigkeiten werden über die Lockdatei fixiert.
 
 TypeScript verwendet `module: NodeNext` und `moduleResolution: NodeNext` für die
 aktuelle Node.js-Modulauflösung. `type: commonjs` im Extension-Manifest hält die
@@ -93,7 +94,7 @@ gemeinsame Typen überführt. Quelle: [Zotero-Leseendpunkte](https://www.zotero.
 Die geprüfte Dokumentation beschreibt lokale Schreibzugriffe **ab Zotero 10**.
 Sie erfordern eine lokale Freigabe über `/api/local/authorize`, einen API-Schlüssel
 und die Server-ID. Ein separater `ZoteroWriter` implementiert diese Funktionen
-als getestetes Backend. Das frühere Detailformular ist entfernt; KI-Schreibwerkzeuge folgen separat. Für ältere
+als getestetes Backend. Das frühere Detailformular ist entfernt; Neuanlage und Papierkorb sind nun an MCP-Werkzeuge angebunden. Für ältere
 Versionen muss ein separater Web-API-Schreibadapter geprüft werden. Lokale und
 Web-API-Schlüssel sowie Objektversionen dürfen nicht vermischt werden.
 Quelle: [Lokale Schreibautorisierung](https://www.zotero.org/support/dev/web_api/v3/local_api#authorizing_writes).
@@ -114,14 +115,14 @@ Quelle: [Lokale Schreibautorisierung](https://www.zotero.org/support/dev/web_api
   [JSON-RPC](https://retorque.re/zotero-better-bibtex/exporting/json-rpc/index.html),
   [Pull-Export](https://retorque.re/zotero-better-bibtex/exporting/pull/).
 - **MCP:** offizielles TypeScript-SDK und stdio verwenden. Die aktuelle Dokumentation
-  führt SDK v2 mit getrennten Server- und Client-Paketen; vor Phase 4 Version und
-  API erneut prüfen. Der Server importiert keine VS-Code-Module.
+  führt SDK v2 mit getrennten Server- und Client-Paketen; die Umsetzung verwendet
+  die geprüfte stabile Version 2.3.1. Der Server importiert keine VS-Code-Module.
   [Offizielles TypeScript-SDK](https://ts.sdk.modelcontextprotocol.io/v2/).
 - **Editoraktionen:** Zitationen zunächst als native VS-Code-Befehle umsetzen.
   Ein separater MCP-Prozess benötigt dafür später eine ausdrücklich definierte Brücke.
-- **PDFs:** geeignete Bibliothek vor Phase 4 bewerten; Fundstellen müssen die tatsächlich
-  gelesene PDF-Seite und den konkreten Anhang enthalten. Die visuelle Analyse von
-  Scans erfolgt bei Bedarf durch die PDF- oder Bildunterstützung des gewählten Sprachmodells.
+- **PDFs:** Dateien direkt an den Agenten übergeben, ohne lokale Textextraktion oder OCR.
+  Seitenbelege und Interpretation liegen beim PDF-fähigen Agenten. Der Server liefert
+  Anhangs-ID, lokalen Dateipfad und optional unveränderte PDF-Bytes.
 - **Schreibschutz:** separate Schreibadapter, ausgewählte Sammlung, bestätigter Import,
   Duplikatprüfung, Versionsprüfung und sichere Speicherung von Zugangsdaten.
 
@@ -143,7 +144,8 @@ Die Projektzuordnung ist dateibasiert und pro Workspace-Ordner isoliert.
 `.zotero/config.json` enthält Version, Bibliothek, Sammlung, CSL-Stil,
 Zitierbefehl, Bib-Pfad, importierte Quellenschlüssel und bei Zotero 10+ die
 Datenbank-ID. Maschineneinstellungen enthalten nur lokale Verbindungs- und
-Stilordnerpfade. Zugangsdaten gehören ausschließlich in SecretStorage.
+Stilordnerpfade. Zugangsdaten gehören in SecretStorage (Extension) bzw. den flüchtigen
+`MemorySecretStore` des eigenständigen MCP-Prozesses.
 Bestehende Dateien werden beim Start erkannt; TeX-Verweise helfen bei der
 Bib-Auswahl, ersetzen aber keine bestätigte Bibliothekszuordnung.
 
@@ -210,7 +212,7 @@ Der Schreibadapter verlangt eine Server-ID, fordert bei Bedarf eine Freigabe
 über `POST /api/local/authorize` an und prüft die ursprüngliche Eintragsversion.
 Bei `401` wird einmal neu autorisiert; bei `412` wird ohne Überschreibversuch
 abgebrochen. Nur dauerhaft erlaubte Schlüssel werden gespeichert. Der
-Schreibadapter ist derzeit weder an ein Metadatenformular noch an ein MCP-Werkzeug angebunden.
+Schreibadapter ist über `ZoteroProjectService` an MCP-Neuanlage und Papierkorb angebunden.
 Quellen: [Lokale API](https://www.zotero.org/support/dev/web_api/v3/local_api),
 [PATCH und Versionsprüfung](https://www.zotero.org/support/dev/web_api/v3/write_requests).
 
@@ -396,3 +398,78 @@ Titel, Autorennachnamen und Publikationsjahr. Nur neu eingeführte Konflikte wer
 beim Import behandelt: gleiche DOI blockiert, mögliche Dubletten erfordern
 einen ausdrücklichen Override. Es erfolgt keine automatische Zusammenführung
 und keine Dublettenbereinigung in Zotero.
+
+
+## Projektgebundener MCP-Server
+
+`src/zotero/projectService.ts` ist die gemeinsame Geschäftslogik ohne VS-Code-API.
+Der stdio-Einstieg erfordert einen absoluten `--project`-Pfad; API-URL und Timeout
+sind separate Startargumente. Jede Operation liest die geschützte Projektbindung
+neu und verwendet die vorhandenen Client-Validierungen und `RequestCoordinator`.
+Metadaten und Suche bleiben im gewählten Bibliotheks-/Sammlungsscope. Die
+Dublettenprüfung vergleicht aktive bibliografische Quellen der gesamten gebundenen
+Bibliothek und verwendet die gemeinsame DOI-/Textnormalisierung.
+
+`metadata.ts` definiert Metadatenschema, Zotero-Feld-/Rollenvalidierung und
+Dublettenvergleich. Das lokale `items/new` wird nicht angenommen; zulässige
+Felder kommen aus `itemTypeFields`. Gespeicherte JSON-Objekte werden unabhängig
+von der Feldreihenfolge verglichen. `ZoteroWriter` teilt den Autorisierungsablauf
+für bestehendes Metadaten-PATCH, versionierte Neuanlage und `PATCH deleted=1`.
+Nach Autorisierung prüft ein Preflight die unveränderte Konfiguration, Sammlung,
+Server-ID und bei Papierkorb die aktuelle Objektversion; die API-Precondition
+schützt zusätzlich gegen spätere Objektänderungen.
+
+Neuanlagen haben eine stabile Anfrage-ID, einen persistenten Digest und einen
+vor dem Schreiben gespeicherten Zotero-Key unter `.zotero/mcp/requests/`.
+`version: 0` begrenzt den ersten POST auf ein neues Objekt. Wiederholungen lesen
+diesen Key zurück und senden den POST nicht erneut. Eine Projektsperre über
+`.zotero/mcp/write.lock` schützt mehrere MCP-Prozesse dieses Projekts. Ein
+Absturz kann eine manuell nach beendetem Prozess zu bereinigende Sperre hinterlassen.
+
+Papierkorb prüft vorab zusätzliche Sammlungen und Zitationen mit dem vorhandenen
+transportneutralen TeX-Planer, ohne dessen Dateiplan anzuwenden. Danach werden
+Item-Daten und die paginierte Papierkorbliste mit lokalem Key-Vergleich verifiziert. Projekt-Bib und
+LaTeX bleiben erhalten; gesonderte Bereinigung nutzt die existierenden Sicherungs-
+und Transaktionsfunktionen. Ungespeicherte Editordaten benötigen weiterhin eine
+separate Editorbrücke.
+
+`src/config/mcp.ts` erstellt Client-Konfigurationen ohne VS Code.
+`src/views/mcpCommands.ts` verbindet diese mit Projektordnerauswahl und
+Extension-Installationspfad. Codex erhält projektbezogene `.codex/config.toml`,
+Claude Code `.mcp.json`. Beide starten denselben gebündelten stdio-Server mit
+explizitem Projektpfad. Die Aktion registriert nicht ausschließlich einen
+VS-Code-MCP-Provider. Details, Quellen, Sicherheitsregeln und Prüfgrenzen:
+[MCP mit Codex und Claude](MCP.md).
+
+
+## Quellenupdates und direkte PDF-Weitergabe
+
+`zotero_update_item` verwendet einen partiellen Metadatenauftrag ohne Standardwerte
+für ausgelassene Felder. Typ-/Rollenvalidierung, Dublettenprüfung ohne den eigenen
+Key, nach Autorisierung wiederholte Scope-/Versionsprüfungen, bedingtes PATCH und
+Rücklesen schützen vorhandene Daten. Bib-Datei und LaTeX bleiben dabei unverändert.
+
+`zotero_list_attachments` liest die paginierten Kind-Anhänge einer geprüften Quelle.
+`zotero_get_attachment` prüft Parent-Key und Projektzugehörigkeit, fragt Zotero nach
+der lokalen Datei-URL und liefert den kanonischen Pfad, Größe und SHA-256. Optional
+werden die unveränderten PDF-Bytes als eingebettete MCP-Ressource zurückgegeben.
+`src/zotero/attachmentFiles.ts` prüft Dateityp, Größe, PDF-Signatur und Änderungen
+während des Lesens; es verarbeitet keinen Dokumenttext. Keine lokale Textextraktion,
+OCR, externe Modellanbindung, Downloads oder temporären Dateikopien. Das Lesen und
+die Interpretation der PDF übernimmt das Datei-/PDF-Werkzeug des Agenten.
+Details und Clientgrenzen: [MCP](MCP.md).
+
+
+## Bereinigung beim Sammlungswechsel
+
+`ProjectController.connect` liest beim Wechsel innerhalb derselben Bibliothek und
+Datenbank die aktuelle Quellenauswahl der neuen Sammlung ohne veralteten Cache.
+`planCollectionChange` bildet die Schnittmenge mit den bereits importierten bzw.
+über die gemeinsame Bestandserkennung zugeordneten Quellen. Persistierte Namen
+und Bib-Felder der Schnittmenge bleiben erhalten. Andere Einträge der aktiven
+Projekt-.bib, ihre Schlüsselzuordnungen und ihre LaTeX-Zitationen werden entfernt;
+Bibliografie-Verweise werden bereinigt. Neue Sammlungsquellen werden nicht automatisch
+importiert. Alle Änderungen werden vorab geplant und zusammen mit der neuen
+Sammlungsbindung über `writeProjectChanges` gesichert/geschrieben. Ungespeicherte
+Editoränderungen, zwischenzeitliche Dateiänderungen und Abruffehler brechen ab.
+Ein Schreibfehler setzt die gesamte Transaktion zurück.

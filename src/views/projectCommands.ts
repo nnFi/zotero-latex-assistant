@@ -24,6 +24,7 @@ import { itemDescription } from "../zotero/items";
 import { isImportableItem } from "../biblatex/selection";
 import { ZoteroError } from "../shared/errors";
 import { citationDeletionPreview, planCitationDeletion, planTexCitationRemoval } from "../biblatex/deletion";
+import { planCollectionChange } from "../biblatex/collectionChange";
 
 interface TreeSelection {
   readonly data?: { readonly kind: string; readonly library?: LibraryRef; readonly collection?: ZoteroCollection; readonly item?: ZoteroItem };
@@ -216,6 +217,24 @@ export class ProjectController {
     }
   }
 
+  private async projectSources(folder: vscode.WorkspaceFolder, bibFile: string): Promise<MigrationSource[]> {
+    const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, "**/*.{bib,tex,ltx,sty,cls}"),
+      "**/{node_modules,.git,.zotero,dist,build,out}/**");
+    const paths = new Set(uris.map((uri) => path.relative(folder.uri.fsPath, uri.fsPath).split(path.sep).join("/")));
+    if (bibFile) {
+      await this.assertSaved(folder, bibFile);
+      if (await readProjectText(folder.uri.fsPath, bibFile) !== undefined) paths.add(bibFile);
+    }
+    const sources: MigrationSource[] = [];
+    for (const relative of [...paths].sort()) {
+      await this.assertSaved(folder, relative);
+      const text = await readProjectText(folder.uri.fsPath, relative);
+      if (text === undefined) throw new Error("The project file list changed during preparation. Please retry.");
+      sources.push({ path: relative, text });
+    }
+    return sources;
+  }
+
   private async presence(config: ProjectConfig, items: readonly ZoteroItem[], text: string,
     resolvedKeys: Readonly<Record<string, string>> = {}): Promise<BibliographyPresence> {
     return resolveBibliographyPresence(config, items, text, { resolvedKeys,
@@ -253,9 +272,31 @@ export class ProjectController {
           parent = choice.key;
         }
       }
-      const next = withProjectLibrary(base, library, collectionKey, connection.serverId);
-      await this.assertSaved(folder, CONFIG_FILE);
-      await saveProjectConfig(folder.uri.fsPath, next, snapshot);
+      let next = withProjectLibrary(base, library, collectionKey, connection.serverId);
+      const changedCollection = base.library?.type === library.type && base.library.id === library.id
+        && base.serverId === connection.serverId && base.collectionKey !== collectionKey;
+      if (changedCollection) {
+        const sources = await this.projectSources(folder, base.bibFile);
+        const scopeClient = new ZoteroClient({ ...getClientOptions(), ...(connection.serverId ? { serverId: connection.serverId } : {}) });
+        scopeClient.clearCache();
+        const items = (await scopeClient.listItems(library, collectionKey || undefined)).filter(isImportableItem);
+        const bibliography = sources.filter((source) => source.path.endsWith(".bib"));
+        const text = bibliography.find((source) => source.path === base.bibFile)?.text ?? "";
+        const presence = await this.presence(base, items, text);
+        const plan = planCollectionChange(base, next, items, presence, bibliography, sources.filter((source) => !source.path.endsWith(".bib")));
+        const current = await this.projectSources(folder, base.bibFile);
+        if (current.length !== sources.length || sources.some((source) => !current.some((file) => file.path === source.path && file.text === source.text))) {
+          throw new Error("The project files changed during the collection switch. Please retry.");
+        }
+        await this.assertSaved(folder, CONFIG_FILE);
+        const updates = [...plan.changes, { path: CONFIG_FILE, previous: snapshot, text: JSON.stringify(plan.config, null, 2) + "\n" }];
+        const backup = await writeProjectChanges(folder.uri.fsPath, updates, "bibliography");
+        next = plan.config;
+        this.log(`Collection changed: removed ${plan.bibliographyCount} bibliography entries outside the selected collection. Backup: ${backup}`);
+      } else {
+        await this.assertSaved(folder, CONFIG_FILE);
+        await saveProjectConfig(folder.uri.fsPath, next, snapshot);
+      }
       // Eine Statusmeldung darf die Projektsperre nicht bis zum Schließen der Meldung halten.
       void vscode.window.showInformationMessage(`Library for ${folder.name} set.${next.bibFile ? "" : " The .bib file can be set separately."}`);
     });
@@ -264,6 +305,8 @@ export class ProjectController {
   private async configure(): Promise<void> {
     const choice = await vscode.window.showQuickPick([
       { label: "Set library", command: "connectProject" },
+      { label: "Set up Codex MCP connection", description: "Connect this project to Codex", command: "setupCodex" },
+      { label: "Set up Claude MCP connection", description: "Connect this project to Claude Code", command: "setupClaude" },
       { label: "Set .bib file", command: "selectBibFile" },
       { label: "Change citation style", command: "selectCitationStyle" },
       { label: "Update .bib manually", command: "updateBib" },
@@ -573,8 +616,7 @@ export class ProjectController {
         if (!selected?.length) return;
         keys = selected.map((entry) => entry.source.key);
       }
-      // Existing project sources remain bound to the library after a collection change.
-      // Their exports use the library/item endpoint, even outside the new collection.
+      // Export the project sources by their stable library/item identities.
       const target = await projectPath(folder.uri.fsPath, config.bibFile);
       const document = vscode.workspace.textDocuments.find((entry) => entry.uri.fsPath === target);
       if (document?.isDirty) throw new Error("Save the open changes to the .bib file first.");
@@ -660,6 +702,11 @@ export class ProjectController {
           for (const key of newKeys) {
             try {
               const detail = await client.getItem(library, key);
+              if (typeof detail.data.citationKey === "string") {
+                if (detail.data.citationKey && detail.data.citationKey !== mapping[key]) throw new Error("A different native citation key has been set in Zotero. It was not overwritten.");
+                if (detail.data.citationKey !== mapping[key]) await writer.updateItem(detail, { citationKey: mapping[key]! });
+                continue;
+              }
               const extra = typeof detail.data.extra === "string" ? detail.data.extra : "";
               const pinned = pinnedCitationKeyExtra(extra, mapping[key]!);
               if (pinned !== extra) await writer.updateItem({ ...detail, data: { ...detail.data, extra } }, { extra: pinned });
