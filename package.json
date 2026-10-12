@@ -1,0 +1,314 @@
+{
+  "name": "zotero-latex-assistant",
+  "displayName": "Zotero LaTeX Assistant",
+  "description": "Local Zotero integration for academic writing with LaTeX in VS Code.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "vscode": "^1.95.0",
+    "node": ">=20.0.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": {
+      "supported": false
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p . && tsc -p tsconfig.webview.json",
+    "watch": "node scripts/watch.cjs",
+    "check": "tsc -p . --noEmit && tsc -p tsconfig.webview.json --noEmit",
+    "test": "npm run compile && node --test dist/test/*.test.js",
+    "test:live": "npm run compile && node scripts/live-smoke.cjs",
+    "vscode:prepublish": "npm run compile"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "zoteroLatexAssistant",
+          "title": "Zotero LaTeX Assistant",
+          "icon": "media/zotero.svg"
+        }
+      ]
+    },
+    "views": {
+      "zoteroLatexAssistant": [
+        {
+          "id": "zoteroLatexAssistant.libraries",
+          "name": "Libraries"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "zoteroLatexAssistant.checkConnection",
+        "title": "Check connection",
+        "category": "Zotero",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "zoteroLatexAssistant.listLibraries",
+        "title": "Show libraries",
+        "category": "Zotero"
+      },
+      {
+        "command": "zoteroLatexAssistant.refresh",
+        "title": "Refresh libraries",
+        "category": "Zotero",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "zoteroLatexAssistant.configureProject",
+        "title": "Configure project",
+        "category": "Zotero",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "zoteroLatexAssistant.connectProject",
+        "title": "Set library",
+        "category": "Zotero",
+        "icon": "$(link)"
+      },
+      {
+        "command": "zoteroLatexAssistant.selectCitationStyle",
+        "title": "Change BibLaTeX citation style",
+        "category": "Zotero",
+        "icon": "$(symbol-text)"
+      },
+      {
+        "command": "zoteroLatexAssistant.selectBibFile",
+        "title": "Set .bib file",
+        "category": "Zotero",
+        "icon": "$(file)"
+      },
+      {
+        "command": "zoteroLatexAssistant.updateBib",
+        "title": "Update .bib manually",
+        "category": "Zotero",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "zoteroLatexAssistant.importItem",
+        "title": "Import source into project .bib",
+        "category": "Zotero",
+        "icon": "$(add)"
+      },
+      {
+        "command": "zoteroLatexAssistant.openProjectConfig",
+        "title": "Open project configuration",
+        "category": "Zotero",
+        "icon": "$(json)"
+      },
+      {
+        "command": "zoteroLatexAssistant.openItem",
+        "title": "Show source in list",
+        "category": "Zotero",
+        "icon": "$(list-unordered)"
+      },
+      {
+        "command": "zoteroLatexAssistant.searchDoi",
+        "title": "Search DOI / title",
+        "category": "Zotero",
+        "icon": "$(search)"
+      },
+      {
+        "command": "zoteroLatexAssistant.openSourceList",
+        "title": "Open source list",
+        "category": "Zotero",
+        "icon": "$(list-unordered)"
+      },
+      {
+        "command": "zoteroLatexAssistant.insertCitation",
+        "title": "Cite \u2026",
+        "category": "Zotero",
+        "icon": "$(quote)"
+      },
+      {
+        "command": "zoteroLatexAssistant.migrateCitationKeys",
+        "title": "Migrate existing citation keys",
+        "category": "Zotero",
+        "icon": "$(replace-all)"
+      },
+      {
+        "command": "zoteroLatexAssistant.deleteAllCitations",
+        "title": "Delete all citations",
+        "category": "Zotero",
+        "icon": "$(trash)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "zoteroLatexAssistant.checkConnection",
+          "when": "view == zoteroLatexAssistant.libraries",
+          "group": "navigation@1"
+        },
+        {
+          "command": "zoteroLatexAssistant.refresh",
+          "when": "view == zoteroLatexAssistant.libraries",
+          "group": "navigation@2"
+        },
+        {
+          "command": "zoteroLatexAssistant.configureProject",
+          "when": "view == zoteroLatexAssistant.libraries",
+          "group": "navigation@3"
+        },
+        {
+          "command": "zoteroLatexAssistant.updateBib",
+          "when": "view == zoteroLatexAssistant.libraries",
+          "group": "navigation@4"
+        },
+        {
+          "command": "zoteroLatexAssistant.searchDoi",
+          "when": "view == zoteroLatexAssistant.libraries",
+          "group": "navigation@5"
+        },
+        {
+          "command": "zoteroLatexAssistant.openSourceList",
+          "when": "view == zoteroLatexAssistant.libraries",
+          "group": "navigation@6"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "zoteroLatexAssistant.openSourceList",
+          "when": "view == zoteroLatexAssistant.libraries && (viewItem == zoteroLibrary || viewItem == zoteroCollection || viewItem == zoteroItems)",
+          "group": "zotero@0"
+        },
+        {
+          "command": "zoteroLatexAssistant.connectProject",
+          "when": "view == zoteroLatexAssistant.libraries && (viewItem == zoteroLibrary || viewItem == zoteroCollection)",
+          "group": "zotero@1"
+        },
+        {
+          "command": "zoteroLatexAssistant.openItem",
+          "when": "view == zoteroLatexAssistant.libraries && viewItem == zoteroItem",
+          "group": "zotero@1"
+        },
+        {
+          "command": "zoteroLatexAssistant.importItem",
+          "when": "view == zoteroLatexAssistant.libraries && viewItem == zoteroItem",
+          "group": "zotero@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "zoteroLatexAssistant.insertCitation",
+          "when": "editorLangId == latex || resourceExtname == .tex",
+          "group": "zotero@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Zotero LaTeX Assistant",
+      "properties": {
+        "zoteroLatexAssistant.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:23119/api/",
+          "scope": "machine",
+          "description": "Local Zotero API. Supports only localhost, 127.0.0.1 or [::1] under /api/."
+        },
+        "zoteroLatexAssistant.requestTimeoutMs": {
+          "type": "integer",
+          "default": 5000,
+          "minimum": 100,
+          "maximum": 60000,
+          "scope": "machine",
+          "description": "Timeout for a local Zotero request in milliseconds."
+        },
+        "zoteroLatexAssistant.libraryType": {
+          "type": "string",
+          "enum": [
+            "user",
+            "group"
+          ],
+          "default": "user",
+          "scope": "resource",
+          "description": "Library type for legacy project settings. The active binding is in .zotero/config.json."
+        },
+        "zoteroLatexAssistant.libraryId": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "scope": "resource",
+          "description": "Library ID for legacy project settings. The active binding is in .zotero/config.json."
+        },
+        "zoteroLatexAssistant.collectionKey": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Collection key for legacy project settings. Choose it with Zotero: Set library; saved in .zotero/config.json."
+        },
+        "zoteroLatexAssistant.bibFile": {
+          "type": "string",
+          "default": "literatur.bib",
+          "scope": "resource",
+          "description": "BibLaTeX path for legacy project settings. Choose the active path with Zotero: Set .bib file."
+        },
+        "zoteroLatexAssistant.citationCommand": {
+          "type": "string",
+          "enum": [
+            "autocite",
+            "parencite",
+            "textcite"
+          ],
+          "default": "autocite",
+          "scope": "resource",
+          "description": "Default citation command for new .zotero/config.json files."
+        },
+        "zoteroLatexAssistant.stylesDirectory": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Legacy CSL folder for old project configurations. The citation style picker now uses the local BibLaTeX installation via kpsewhich."
+        },
+        "zoteroLatexAssistant.kpsewhichPath": {
+          "type": "string",
+          "default": "kpsewhich",
+          "scope": "machine",
+          "description": "Executable name or absolute path to kpsewhich from the locally installed TeX distribution. Used to discover BibLaTeX styles; nothing is downloaded."
+        },
+        "zoteroLatexAssistant.bibliographyExporter": {
+          "type": "string",
+          "enum": [
+            "better-biblatex",
+            "native"
+          ],
+          "default": "better-biblatex",
+          "scope": "resource",
+          "enumDescriptions": [
+            "Export complete metadata using the locally installed Better BibTeX plugin and its Better BibLaTeX translator.",
+            "Explicitly use Zotero's native BibLaTeX exporter instead."
+          ],
+          "description": "Exporter for new sources and manual metadata updates. Better BibLaTeX requires Better BibTeX for Zotero; no silent fallback. Existing project citation keys stay unchanged."
+        }
+      }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": "**/.zotero/config.json",
+        "url": "./media/zotero-config.schema.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "~1.95.0",
+    "typescript": "^5.7.0"
+  }
+}

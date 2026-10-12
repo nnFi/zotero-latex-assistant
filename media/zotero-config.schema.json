@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Zotero project configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "library",
+    "collectionKey",
+    "bibFile",
+    "citationStyle",
+    "citationCommand",
+    "importedItemKeys"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "library": {
+      "description": "Project library; null means not set yet.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "user",
+                "group"
+              ]
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "if": {
+            "properties": {
+              "type": {
+                "const": "group"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "id": {
+                "minimum": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "collectionKey": {
+      "type": "string",
+      "pattern": "^([A-Z0-9]{8})?$",
+      "description": "Empty: entire library; otherwise the selected collection key."
+    },
+    "bibFile": {
+      "type": "string",
+      "pattern": "^$|^(?!/)(?!.*(?:^|/)[.]{1,2}/)(?![.]zotero/)(?!.*[\\\\:]).+[.]bib$",
+      "description": "Relative project file path; empty means not set yet."
+    },
+    "citationStyle": {
+      "type": "string",
+      "description": "Local BibLaTeX style name, e.g. authoryear, numeric or apa. Old CSL IDs remain readable until a BibLaTeX style is selected."
+    },
+    "citationLocale": {
+      "type": "string",
+      "minLength": 2,
+      "description": "Legacy CSL citation language. Removed when selecting a BibLaTeX style; BibLaTeX uses the LaTeX document language."
+    },
+    "citationCommand": {
+      "enum": [
+        "autocite",
+        "parencite",
+        "textcite"
+      ],
+      "description": "LaTeX command for \u201cCite\u201d; does not change the citation style or existing citations."
+    },
+    "importedItemKeys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z0-9]{8}$"
+      },
+      "description": "Sources to export again when manually updating."
+    },
+    "serverId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Zotero database binding for Zotero 10+."
+    },
+    "citationKeys": {
+      "type": "object",
+      "description": "Persistent mapping from Zotero item keys to project citation keys. Saved on import.",
+      "propertyNames": {
+        "pattern": "^[A-Z0-9]{8}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^\\s,{}\\[\\]\\\\%&#$^~=()]+$"
+      }
+    },
+    "citationStyleType": {
+      "const": "biblatex",
+      "description": "New style selections use the local BibLaTeX installation and synchronize LaTeX package options. Absent in legacy CSL configurations."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "library": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "collectionKey": {
+            "const": ""
+          },
+          "importedItemKeys": {
+            "maxItems": 0
+          },
+          "citationKeys": {
+            "maxProperties": 0
+          }
+        },
+        "not": {
+          "required": [
+            "serverId"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "citationStyleType"
+        ],
+        "properties": {
+          "citationStyleType": {
+            "const": "biblatex"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "citationStyle": {
+            "pattern": "^$|^[a-zA-Z0-9][a-zA-Z0-9_.+-]*$"
+          }
+        }
+      }
+    }
+  ]
+}

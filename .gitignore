@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.vsix
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/

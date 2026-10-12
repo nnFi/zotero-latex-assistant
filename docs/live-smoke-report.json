@@ -1,0 +1,16 @@
+{
+  "success": true,
+  "vscodeVersion": "1.141.0",
+  "checks": [
+    "Extension activates in the installed VS Code host",
+    "Expected extension commands are registered",
+    "Real Zotero connection, item list and native BibLaTeX export are readable",
+    "Registered update command writes real native metadata with the existing stable project key",
+    "Registered source-list command creates its real VS Code webview",
+    "Citation preparation cancellation leaves the real document unchanged; insertion uses the real editor and saves successfully"
+  ],
+  "limitations": [
+    "Native exporter only; no Zotero writes or authorization prompts",
+    "No manual dialog/button or Better BibTeX integration test"
+  ]
+}
