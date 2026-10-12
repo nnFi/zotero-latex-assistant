@@ -12,7 +12,7 @@ import { listInstalledStyles } from "../zotero/styles";
 import { citationLanguage, type CitationLanguage } from "../biblatex/language";
 import { listInstalledBiblatexStyles, localTexLookup, type BiblatexStyle } from "../biblatex/styles";
 import { planBiblatexStyle } from "../biblatex/texStyle";
-import { planBiblatexResources } from "../biblatex/texResources";
+import { planProjectBibFile } from "../biblatex/bibFile";
 import { bibEntries } from "../biblatex/importer";
 import { resolveBibliographyPresence, type BibliographyPresence } from "../biblatex/presence";
 import { assertBibliographyScope, bibliographyItemKeys, bibliographyExportsHaveReferences, planBibliographyUpdate, completeBibliographyUpdate } from "../biblatex/update";
@@ -379,22 +379,13 @@ export class ProjectController {
       if (config.bibFile) await this.assertSaved(folder, config.bibFile);
       const oldBib = config.bibFile ? await readProjectText(folder.uri.fsPath, config.bibFile) : undefined;
       const selectedBib = await readProjectText(folder.uri.fsPath, bibFile);
-      if (oldBib !== undefined) bibEntries(oldBib);
-      if (selectedBib !== undefined) bibEntries(selectedBib);
       const sources = await this.texSources(folder);
-      const resourceChanges = planBiblatexResources(sources, config.bibFile, bibFile);
-      let updated = sources.map((source) => resourceChanges.find((change) => change.path === source.path) ?? source);
       if (config.citationStyleType === "biblatex" && config.citationStyle) {
         const styles = await this.installedStyles(folder);
         if (!styles.some((style) => style.id === config.citationStyle)) throw new Error("The configured BibLaTeX style is not installed locally. Choose an installed style first.");
-        const styleChanges = planBiblatexStyle(updated, config.citationStyle, bibFile);
-        updated = updated.map((source) => styleChanges.find((change) => change.path === source.path) ?? source);
       }
-      const next = parseProjectConfig({ ...config, bibFile });
-      const changes = updated.flatMap((source, i) => source.text === sources[i]!.text ? [] : [{ path: source.path, previous: sources[i]!.text, text: source.text }]);
-      const updates = [...changes, { path: CONFIG_FILE, previous, text: JSON.stringify(next, null, 2) + "\n" }];
-      // A new path carries the existing bibliography forward; existing targets are preserved.
-      if (selectedBib === undefined && oldBib !== undefined) updates.unshift({ path: bibFile, previous: undefined, text: oldBib });
+      const updates = planProjectBibFile(config, previous, bibFile, oldBib, selectedBib, sources);
+      const changes = updates.filter((change) => /\.(tex|ltx|sty|cls)$/.test(change.path));
       await this.assertTexUnchanged(folder, sources);
       for (const update of updates) await this.assertSaved(folder, update.path);
       if (config.bibFile && await readProjectText(folder.uri.fsPath, config.bibFile) !== oldBib) throw new Error("The previous .bib file changed. Please retry.");

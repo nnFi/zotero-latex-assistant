@@ -69,7 +69,7 @@ nicht mehr den aktuellen Funktionsumfang.
 - Zotero-/Better-BibTeX-Schlüssel werden projektbezogen gespeichert. Das optionale
   Festhalten neuer Schlüssel in Zotero verwendet einen separaten Schreibadapter
   mit lokaler Autorisierung, SecretStorage und Versionsprüfung.
-- Der lokale MCP-Server mit 28 Werkzeugen ist implementiert: Bibliotheken,
+- Der lokale MCP-Server mit 29 Werkzeugen ist implementiert: Bibliotheken,
   Sammlungen, Projektbindung, Suche, Metadaten, Dublettenprüfung, Neuanlage und
   Papierkorb mit Wiederherstellung, Quellennotizen, wissenschaftliche Recherche,
   zitatabhängiger Bib-Import, Quellenaktualisierung und PDF-Dateiweitergabe. Die Extension richtet Codex über projektbezogene
@@ -77,6 +77,12 @@ nicht mehr den aktuellen Funktionsumfang.
   Gemeinsame Geschäftslogik, Anfragekoordination, Server-/Versionsschutz und
   sitzungsbezogene Schlüssel im Speicher werden wiederverwendet. Server und
   Laufzeitabhängigkeiten sind im VSIX gebündelt.
+- `zotero_set_project_bib_file` setzt vorhandene Projekt-Bib-Dateien mit derselben
+  Änderungsplanung wie **Set .bib file**. Eindeutige Treffer werden erkannt,
+  mehrdeutige Kandidaten für eine ausdrückliche Pfadauswahl zurückgegeben;
+  ohne vorhandene Datei wird nichts gesetzt oder angelegt.
+- Ein farbiges Buch-/Zotero-/LaTeX-Icon ist im Extension-Manifest für die
+  Erweiterungsübersicht hinterlegt; das monochrome Activity-Bar-Symbol bleibt erhalten.
 - Echter Codex-CLI-Lesezugriff und das Anlegen–Wiederfinden–Papierkorb-Szenario in
   der freigegebenen `TestSammlungMCP` sind bestanden: genau eine Testquelle
   `KJ6NE8XL`, angelegt mit Version 7, verifiziert im Papierkorb mit Version 8.
@@ -946,3 +952,21 @@ Fehlerkorrektur der Projektsperre am 11. Oktober 2026:
   MCP-Client führt den Ablauf Anlegen–Zuordnen–gesperrt Löschen–Wechseln–Löschen
   über den tatsächlichen gebündelten Server aus. Zotero-Schreibprüfungen bleiben
   simuliert; keine persönlichen Sammlungen wurden angelegt oder gelöscht.
+
+## MCP-Bib-Dateiauswahl und Extension-Icon (12. Oktober 2026)
+
+- 29. Werkzeug `zotero_set_project_bib_file`: vorhandene Projektdatei erkennen,
+  Kandidaten bei Mehrdeutigkeit zurückgeben und danach einen ausdrücklich gewählten
+  relativen Pfad setzen. Ohne Treffer keine Konfiguration ändern oder Bib-Datei erzeugen.
+  Eine bestehende verfügbare Dateizuordnung wird beim automatischen Aufruf beibehalten.
+- Gemeinsamer Plan mit **Set .bib file** für LaTeX-Ressourcen, Stil, unveränderte
+  Bibliografieinhalte und Schlüssel. Vorschau, Sicherungen, Dateischutz und Projektsperre;
+  keine laufende Zotero-Verbindung nötig. Der Extension-Befehl unterstützt weiterhin
+  ausdrücklich gewählte neue Pfade samt Kopie des alten Bestands.
+- Farbiges 256×256-PNG-Icon aus editierbarer SVG-Quelle im Extension-Manifest und VSIX.
+- Build und beide TypeScript-Projekte erfolgreich; 495 Tests in 38 Testdateien bestanden.
+  Der offizielle MCP-Client prüft fehlenden Bestand, Kandidatenliste, Vorschau,
+  konkrete Auswahl und Wiederholung über den gebündelten stdio-Server. Zusätzliche
+  Tests prüfen verschachtelte/ausgeschlossene Dateien, TeX-Erkennung, Backups,
+  stabile Projektdaten, Pfad-/Symlinkschutz, Syntaxfehler und gemeinsame Schreibsperre.
+  Das aktualisierte VSIX wurde erfolgreich erzeugt.

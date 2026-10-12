@@ -29,6 +29,7 @@ import { CrossrefClient } from "../research/crossref";
 import { bibliographyRecords } from "../biblatex/fields";
 import { assertCollectionDeletionAllowed, collectionSubtree, createProjectCollection } from "./collectionOperations";
 import { setProjectCollection } from "./projectCollection";
+import { setProjectBibFile } from "./projectBibFile";
 import { withProjectWriteLock } from "../config/projectLock";
 
 interface Scope { config: ProjectConfig; snapshot: string; client: ZoteroClient; library: LibraryRef }
@@ -297,6 +298,10 @@ export class ZoteroProjectService {
       const scope = await this.scope();
       return syncCitedBibliography(this.root, scope.config, scope.snapshot, scope.client, this.options, backend, dryRun, () => this.unchanged(scope));
     });
+  }
+
+  async setBibFile(bibFile?: string, dryRun = false) {
+    return this.writeLock(() => setProjectBibFile(this.root, bibFile, dryRun));
   }
 
   async listNotes(library: LibraryRef, itemKey: string) {

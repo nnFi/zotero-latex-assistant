@@ -6,7 +6,7 @@ Klassische Literaturverwaltung und KI-Unterstützung über den lokalen MCP-Serve
 **Aktueller Stand:** Zotero-Seitenleiste mit Bibliotheken, hierarchischen Sammlungen,
 Projektzuordnung in `.zotero/config.json`, gezieltem BibLaTeX-Import,
 Quellenliste mit Mehrfachauswahl, Einfügen von LaTeX-Zitationen und DOI-/Titelsuche über Crossref.
-Der lokale MCP-Server bietet außerdem 28 Werkzeuge für Lesen, wissenschaftliche Recherche,
+Der lokale MCP-Server bietet außerdem 29 Werkzeuge für Lesen, wissenschaftliche Recherche,
 zitatabhängigen Bib-Import, Notizen, Dublettenprüfung, Quellenaktualisierung,
 bibliografische Neuanlage, Zotero-Papierkorb mit Wiederherstellung, Sammlungsverwaltung und PDF-Weitergabe
 an den Agenten. PDFs werden unverändert als Datei übergeben, ohne lokale Textextraktion.
@@ -29,6 +29,12 @@ dem Projekt wie über **Set library** zuordnen und nicht zugeordnete Sammlungen 
 Die aktuell zugeordnete Sammlung und ihre übergeordneten Sammlungen sind gegen
 Löschen gesperrt. Erst erfolgreich zu einer anderen Sammlung wechseln, dann löschen.
 [Sammlungswerkzeuge](docs/MCP.md#sammlungen-anlegen-zuordnen-und-löschen).
+
+`zotero_set_project_bib_file` setzt eine vorhandene `.bib` im Projekt. Ohne Pfadangabe
+wird eine bestehende Einstellung beibehalten oder eine eindeutig erkannte Datei gewählt.
+Bei mehreren möglichen Dateien erhält der Agent deren Pfade und fragt nach der Auswahl;
+anschließend setzt er genau die gewählte Datei. Ohne Treffer wird nichts gesetzt oder angelegt.
+[Bib-Dateiauswahl über MCP](docs/MCP.md#projekt-bib-datei-auswählen).
 
 ## Entwicklung starten
 
@@ -533,7 +539,7 @@ src/
   config/                .zotero-Projektkonfiguration und sichere Projektdateien
   shared/                Gemeinsame Typen und Fehler
 mcp/
-  server.ts              Eigenständiger stdio-Server mit 28 Werkzeugen
+  server.ts              Eigenständiger stdio-Server mit 29 Werkzeugen
   tools/                 Werkzeugübersicht
 test/                    Tests mit simulierten Zotero-Antworten
 docs/                    Projektauftrag und Architekturentscheidungen

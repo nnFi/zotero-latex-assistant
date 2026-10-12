@@ -2,6 +2,7 @@
   "name": "zotero-latex-assistant",
   "displayName": "Zotero LaTeX Assistant",
   "description": "Local Zotero integration for academic writing with LaTeX in VS Code.",
+  "icon": "media/icon.png",
   "version": "0.1.0",
   "publisher": "local",
   "private": true,

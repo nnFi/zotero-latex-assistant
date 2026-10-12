@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
-import { CONFIG_FILE, newProjectConfig, readProjectConfig, readProjectText, saveProjectConfig } from "../src/config/project";
+import { newProjectConfig, readProjectConfig, readProjectText, saveProjectConfig } from "../src/config/project";
 
 // The real bundled stdio server talks to a deterministic local-API test double
 // in its own process. No network or Zotero installation is needed for this test.
@@ -119,7 +119,7 @@ test("official MCP client exercises local tools and identifier tools over real b
     throw new Error(diagnostics || (error instanceof Error ? error.message : "No diagnostics captured"), { cause: error });
   }
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 28);
+  assert.equal(tools.length, 29);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object"); assert.equal(tool.outputSchema?.type, "object");
     assert.equal(tool.annotations?.openWorldHint, ["zotero_lookup_identifier", "zotero_import_identifier", "zotero_research"].includes(tool.name));
@@ -133,6 +133,14 @@ test("official MCP client exercises local tools and identifier tools over real b
     assert(!JSON.stringify(output).includes("A".repeat(32)));
     return output.result;
   };
+  assert.equal((await call("zotero_set_project_bib_file")).status, "not-found");
+  await writeFile(path.join(root, "one.bib"), ""); await writeFile(path.join(root, "two.bib"), "");
+  const ambiguousBib = await call("zotero_set_project_bib_file");
+  assert.equal(ambiguousBib.status, "ambiguous"); assert.deepEqual(ambiguousBib.candidates, ["one.bib", "two.bib"]);
+  assert.equal((await call("zotero_set_project_bib_file", { bibFile: "two.bib", dryRun: true })).status, "preview");
+  assert.equal((await readProjectConfig(root))!.bibFile, "");
+  assert.equal((await call("zotero_set_project_bib_file", { bibFile: "two.bib" })).status, "selected");
+  assert.equal((await call("zotero_set_project_bib_file")).status, "unchanged");
   assert.equal((await call("zotero_list_libraries")).libraries instanceof Array, true);
   assert.equal((await call("zotero_list_collections")).collections instanceof Array, true);
   assert.equal((await call("zotero_get_selected_collection")).writeReady, true);
@@ -174,9 +182,8 @@ test("official MCP client exercises local tools and identifier tools over real b
     metadata: { fields: { extra: "Note\nCitation Key: LegacyExplicit2026" } } });
   assert.equal(keyUpdate.status, "updated"); assert.equal(keyUpdate.version, 13);
   assert.equal((keyUpdate.item as { citationKey: string }).citationKey, "LegacyExplicit2026");
-  const config = (await readProjectConfig(root))!;
-  await saveProjectConfig(root, { ...config, bibFile: "refs.bib" }, await readProjectText(root, CONFIG_FILE));
   await writeFile(path.join(root, "refs.bib"), "@book{Reserved2026,title={Unmanaged source}}\n");
+  assert.equal((await call("zotero_set_project_bib_file", { bibFile: "refs.bib" })).status, "selected");
   const collision = await client.callTool({ name: "zotero_update_item", arguments: { library: item.library, itemKey: item.key, expectedVersion: 13,
     metadata: { fields: { extra: "Citation Key: reserved2026" } }, allowPossibleDuplicate: true } });
   assert.equal(collision.isError, true);

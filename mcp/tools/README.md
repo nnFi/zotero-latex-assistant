@@ -1,6 +1,6 @@
 # Implementierte MCP-Werkzeuge
 
-Der eigenständige stdio-Einstieg `mcp/server.ts` registriert 28 Werkzeuge über
+Der eigenständige stdio-Einstieg `mcp/server.ts` registriert 29 Werkzeuge über
 das offizielle TypeScript-SDK 2.3.1. Die gemeinsame Geschäftslogik liegt in
 `src/zotero/projectService.ts`; sie importiert keine VS-Code-API.
 
@@ -13,6 +13,7 @@ das offizielle TypeScript-SDK 2.3.1. Die gemeinsame Geschäftslogik liegt in
 | `zotero_set_project_collection` | Projekt wie „Set library“ zuordnen bzw. Sammlung mit gesicherter Literatur-/Zitationsbereinigung wechseln |
 | `zotero_delete_collection` | Nicht zugeordnete Sammlung versionsgeschützt löschen; zugeordnete Sammlung und ihre Vorfahren bleiben gesperrt |
 | `zotero_get_selected_collection` | Projektbindung und Schreibbereitschaft prüfen |
+| `zotero_set_project_bib_file` | Vorhandene Projekt-.bib erkennen bzw. nach Auswahl eines zurückgegebenen Kandidaten ausdrücklich setzen; ohne Treffer nichts ändern |
 | `zotero_search` | Bibliografische Quellen im ausgewählten Scope durchsuchen |
 | `zotero_research` | Zotero und Projekt-.bib zuerst durchsuchen, danach bei Bedarf neue Identifier-Metadaten mit Herkunft verifizieren |
 | `zotero_sync_bibliography` | Nur fehlende, ausdrücklich zitierte Quellen aus gespeicherten LaTeX-Dateien automatisch in die .bib übernehmen |

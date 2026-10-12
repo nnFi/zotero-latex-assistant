@@ -8,6 +8,42 @@ angehängter PDFs an den Agenten.
 Sammlungen können angelegt, dem Projekt zugeordnet und nach einem Wechsel gelöscht werden.
 Es gibt keine lokale Textextraktion, OCR oder serverseitige Modellanalyse.
 
+## Projekt-.bib-Datei auswählen
+
+`zotero_set_project_bib_file` verwendet dieselbe Änderungsplanung wie **Set .bib file**
+und funktioniert auch vor der Bibliothekszuordnung oder ohne laufendes Zotero.
+Ohne `bibFile` bleibt eine vorhandene konfigurierte Datei ausgewählt; andernfalls
+wird anhand lokaler LaTeX-Verweise bzw. einer einzigen vorhandenen `.bib` erkannt.
+Backup-, Build- und Abhängigkeitsordner werden bei der Suche ausgelassen.
+
+```json
+{"dryRun":true}
+```
+
+`candidates` enthält die gefundenen relativen Dateipfade. Bei `status: "ambiguous"`
+wird nichts geändert: Der Agent zeigt die Kandidaten, der Benutzer wählt eine Datei,
+und der Agent übergibt anschließend genau diesen Pfad:
+
+```json
+{"bibFile":"sources/references.bib"}
+```
+
+Ohne vorhandene Datei liefert das Werkzeug `not-found` und lässt die Konfiguration
+unverändert. Auch ein ausdrücklich angegebener fehlender Pfad legt keine Datei an.
+`dryRun: true` zeigt für eine gewählte Datei die geplanten `changedFiles`, schreibt aber nichts.
+Erfolgreiche Auswahl liefert `selected`, ein bereits vollständiger Zustand `unchanged`.
+
+Vorhandene Bib-Inhalte, Bibliotheksbindung, Zitierstil und gespeicherte Schlüssel bleiben
+erhalten. Bisherige literale LaTeX-Ressourcenverweise werden angepasst und eine bestehende
+BibLaTeX-Einrichtung wird wie im Extension-Befehl vervollständigt. Ein konfigurierter
+BibLaTeX-Stil muss lokal über `kpsewhich` verfügbar sein. Änderungen werden gemeinsam
+gesichert und bei Schreibfehlern zurückgesetzt; geänderte gespeicherte Dateien verhindern
+das Schreiben. Vorher Editorpuffer speichern: Der eigenständige Server sieht nur Dateien
+auf der Festplatte. Pfade und Symlinks dürfen das Projekt nicht verlassen.
+
+Aufrufe zum Setzen gehören zur beauftragten Projekteinstellung bzw. zum Schreiben mit
+Zitationen. Zotero-Schreibfreigaben sind hierfür nicht erforderlich.
+
 ## Sammlungen anlegen, zuordnen und löschen
 
 **Die zugeordnete Projekt-Sammlung darf nicht gelöscht werden.** Das gilt ebenso
@@ -104,7 +140,7 @@ und [Zotero-Sammlungsmodell](https://github.com/zotero/zotero/blob/main/chrome/c
 
 ## Wissenschaftlicher Ablauf, Notizen und Wiederherstellung
 
-Der Server stellt 28 Werkzeuge bereit. Der wissenschaftliche Ablauf ist in seinen
+Der Server stellt 29 Werkzeuge bereit. Der wissenschaftliche Ablauf ist in seinen
 Anweisungen verankert und über zwei zusätzliche Werkzeuge ausführbar:
 
 1. `zotero_research` sucht zuerst in der ausgewählten Zotero-Sammlung und der
@@ -671,7 +707,7 @@ Das [MCP-Prüfprotokoll](mcp-smoke-report.json) hält die Ergebnisse fest:
 - Claude Code 2.1.136 verband den Server und erkannte alle acht Werkzeuge. Der
   eigentliche Modellaufruf scheiterte mit `401`, weil die Anmeldung abgelaufen
   war. Claude-Lesen und Claude-Schreiben sind bis zur erneuten Anmeldung offen.
-- Automatisierte Tests prüfen alle 28 Werkzeuge mit dem offiziellen MCP-Client
+- Automatisierte Tests prüfen alle 29 Werkzeuge mit dem offiziellen MCP-Client
   über den gebündelten stdio-Prozess sowie Neuanlage, Zuordnung, Dubletten,
   Wiederholung nach verlorener Antwort, Papierkorb, Fremdscope, Datenbankwechsel,
   Versionskonflikte, verweigerte/abgelaufene Freigaben und Änderungen während des
