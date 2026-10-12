@@ -1,5 +1,5 @@
 import { ZoteroError } from "../shared/errors";
-import type { LibraryRef, ZoteroAttachment, ZoteroCollection, ZoteroConnectionInfo, ZoteroItem, ZoteroItemDetail, ZoteroLibrary } from "../shared/types";
+import type { LibraryRef, ZoteroAttachment, ZoteroCollection, ZoteroCollectionDetail, ZoteroConnectionInfo, ZoteroItem, ZoteroItemDetail, ZoteroLibrary } from "../shared/types";
 import { collectionsPath, parseCollection } from "./collections";
 import { itemsPath, parseItem } from "./items";
 import { isRecord, isTrashedData, libraryPrefix, validateKey } from "./validation";
@@ -132,6 +132,18 @@ export class ZoteroClient {
     return collection;
   }
 
+  async getCollectionDetail(library: LibraryRef, key: string): Promise<ZoteroCollectionDetail> {
+    const response = await this.request(`${libraryPrefix(library)}/collections/${validateKey(key)}?format=json`);
+    const value = await this.readJson(response);
+    const collection = parseCollection(value, library);
+    if (collection.key !== key || !isRecord(value) || !isRecord(value.data)
+      || !Number.isSafeInteger(value.version) || (value.version as number) < 0) {
+      throw new ZoteroError("INVALID_RESPONSE", "Invalid collection key or version.");
+    }
+    const serverId = response.headers.get("Zotero-Server-ID");
+    return { collection, version: value.version as number, data: value.data, ...(serverId ? { serverId } : {}) };
+  }
+
   async searchItems(library: LibraryRef, collectionKey: string | undefined, query: string): Promise<readonly ZoteroItem[]> {
     return this.readPagedList(`${itemsPath(library, collectionKey)}?${new URLSearchParams({ q: query, qmode: "everything" })}`,
       (value) => parseItem(value, library));
@@ -163,6 +175,28 @@ export class ZoteroClient {
       return { key: validateKey(value.key), trashed: isTrashedData(value.data) };
     });
     return items.some((item) => item.key === key && item.trashed);
+  }
+
+  async listTrash(library: LibraryRef): Promise<readonly ZoteroItemDetail[]> {
+    return this.readPagedList(`${libraryPrefix(library)}/items/trash`, (value) => {
+      const item = parseItem(value, library);
+      if (!isRecord(value) || !isRecord(value.data) || !Number.isSafeInteger(value.version)
+        || (value.version as number) < 0 || !isTrashedData(value.data)) {
+        throw new ZoteroError("INVALID_RESPONSE", "Invalid Zotero trash item.");
+      }
+      return { item, data: value.data, version: value.version as number };
+    });
+  }
+
+  async listItemNotes(library: LibraryRef, key: string): Promise<readonly { key: string; version: number; parentKey: string; note: string }[]> {
+    return this.readPagedList(`${libraryPrefix(library)}/items/${validateKey(key)}/children?itemType=note`, (value) => {
+      if (!isRecord(value) || !isRecord(value.data) || value.data.itemType !== "note"
+        || value.data.parentItem !== key || typeof value.data.note !== "string" || isTrashedData(value.data)
+        || !Number.isSafeInteger(value.version) || (value.version as number) < 0) {
+        throw new ZoteroError("INVALID_RESPONSE", "Invalid source note or parent.");
+      }
+      return { key: validateKey(value.key), version: value.version as number, parentKey: key, note: value.data.note };
+    });
   }
 
   async listAttachmentMetadata(library: LibraryRef, collectionKey?: string): Promise<readonly ZoteroAttachment[]> {

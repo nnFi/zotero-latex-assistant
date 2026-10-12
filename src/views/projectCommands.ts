@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { CONFIG_SECTION, getBibliographyExporter, getClientOptions, getProjectSettings } from "../config/settings";
+import { withProjectWriteLock } from "../config/projectLock";
 import { CONFIG_FILE, discoverBibFile, isMissing, projectPath, readProjectConfig, readProjectText, saveProjectConfig,
   newProjectConfig, parseProjectConfig, validateBibFile, withProjectLibrary, writeProjectChanges, writeProjectText } from "../config/project";
 import type { LibraryRef, ProjectConfig, ZoteroCollection, ZoteroDatabaseBinding, ZoteroItem } from "../shared/types";
@@ -185,7 +186,7 @@ export class ProjectController {
     const key = folder.uri.toString();
     if (this.busy.has(key)) throw new Error("A Zotero action is already running for this project.");
     this.busy.add(key);
-    try { await action(); }
+    try { await withProjectWriteLock(folder.uri.fsPath, action); }
     finally { this.busy.delete(key); await this.refreshStatus(); }
   }
 

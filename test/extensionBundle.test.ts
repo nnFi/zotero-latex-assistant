@@ -8,6 +8,7 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { CONFIG_FILE, newProjectConfig, readProjectConfig, saveProjectConfig } from "../src/config/project";
+import { withProjectWriteLock } from "../src/config/projectLock";
 
 test("packaged extension renders its source list and applies styles only to active TeX commands", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "zotero-extension-bundle-"));
@@ -124,4 +125,10 @@ Text
     .replace("\n" + String.raw`\end{document}`, "\n" + String.raw`\printbibliography` + "\n" + String.raw`\end{document}`);
   assert.equal(await readFile(path.join(projectRoot, "main.tex"), "utf8"), expected);
   assert.equal(await readFile(path.join(projectRoot, "refs.bib"), "utf8"), bibliography);
+  await withProjectWriteLock(projectRoot, async () => {
+    await commands.get("zoteroLatexAssistant.connectProject")!();
+    assert.equal(errors.length, 1);
+    assert.match(errors[0]!, /Another MCP write or Zotero project action/);
+  });
+  assert.equal((await readProjectConfig(projectRoot))!.collectionKey, "");
 });

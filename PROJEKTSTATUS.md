@@ -69,9 +69,10 @@ nicht mehr den aktuellen Funktionsumfang.
 - Zotero-/Better-BibTeX-Schlüssel werden projektbezogen gespeichert. Das optionale
   Festhalten neuer Schlüssel in Zotero verwendet einen separaten Schreibadapter
   mit lokaler Autorisierung, SecretStorage und Versionsprüfung.
-- Der lokale MCP-Server mit elf Werkzeugen ist implementiert: Bibliotheken,
+- Der lokale MCP-Server mit 28 Werkzeugen ist implementiert: Bibliotheken,
   Sammlungen, Projektbindung, Suche, Metadaten, Dublettenprüfung, Neuanlage und
-  wiederherstellbarer Papierkorb, Quellenaktualisierung und PDF-Dateiweitergabe. Die Extension richtet Codex über projektbezogene
+  Papierkorb mit Wiederherstellung, Quellennotizen, wissenschaftliche Recherche,
+  zitatabhängiger Bib-Import, Quellenaktualisierung und PDF-Dateiweitergabe. Die Extension richtet Codex über projektbezogene
   `.codex/config.toml` und Claude Code über `.mcp.json` mit explizitem Projektpfad ein.
   Gemeinsame Geschäftslogik, Anfragekoordination, Server-/Versionsschutz und
   sitzungsbezogene Schlüssel im Speicher werden wiederverwendet. Server und
@@ -270,6 +271,11 @@ Formulare für manuelle Literaturverwaltung.
 - [x] `zotero_lookup_identifier` und `zotero_import_identifier`: DOI über Crossref/DataCite, ISBN über Open Library, Herkunftsnachweis und eingefrorene Metadaten für sichere Wiederholungen.
 - [x] ISBN-Prüfziffern, ISBN-10/13-Äquivalenz und bibliotheksweite Prüfung derselben Buchausgabe ergänzen; Buchkapitel mit gemeinsamer ISBN zulassen.
 - [x] `zotero_delete_item` als versionsgeschützten, verifizierten Papierkorb implementieren.
+- [x] `zotero_list_trash` und `zotero_restore_item` mit eindeutigem Key, Sammlungsscope, Versionsprüfung und verifiziertem `deleted: 0` ergänzen.
+- [x] Quellennotizen über `zotero_list_notes`, `zotero_get_note`, `zotero_create_note` und `zotero_update_note` lesen/schreiben; Neuanlagen mit persistentem Anfragejournal und Updates mit eigener Notizversion absichern.
+- [x] Sammlungen mit stabiler Anfrage-ID anlegen und per `zotero_get_collection` inklusive Version und Löschsperre prüfen.
+- [x] Sammlungen per MCP wie „Set library“ zuordnen, gemeinsame Quellen/Keys erhalten und entfernte Literatur/Zitate gesichert bereinigen.
+- [x] Nicht zugeordnete Sammlungen versionsgeschützt löschen. Zugeordnete Sammlung und Vorfahren sind zwingend gesperrt; vorher erfolgreich wechseln. Quellen bleiben erhalten.
 - [x] `zotero_update_item` als validiertes partielles PATCH mit Versionsschutz und Rückleseprüfung implementieren.
 - [ ] `zotero_add_to_collection` implementieren.
 - [x] `zotero_attach_pdf`: lokale PDF als gespeicherte Kopie, verifizierter Drei-Phasen-Upload, Inhaltsdubletten und persistenter Wiederholungsschutz.
@@ -290,11 +296,11 @@ Formulare für manuelle Literaturverwaltung.
 - [ ] `zotero_search_external` implementieren.
 - [ ] `zotero_lookup_doi` implementieren.
 - [ ] `zotero_find_evidence` mit belegbaren Fundstellen implementieren.
-- [ ] Bestehende Sammlung zuerst durchsuchen und fehlende Quellen recherchieren.
-- [ ] Metadaten verifizieren und Quellen nachvollziehbar vorschlagen.
+- [x] Bestehende Sammlung und Projekt-.bib zuerst durchsuchen und fehlende Quellen recherchieren (`zotero_research`).
+- [x] Identifier-Metadaten verifizieren und Quellen mit Anbieter/Herkunft nachvollziehbar vorschlagen; wissenschaftliche Inhalte separat prüfen.
 - [ ] Quellen und verfügbare PDFs nach Freigabe importieren und der Sammlung zuordnen.
-- [ ] Beim späteren KI-Schreibworkflow nur tatsächlich zitierte Quellen automatisch in die Projekt-`.bib` übernehmen; die menschliche Checkbox-Auswahl bleibt unabhängig davon erhalten.
-- [ ] Durchgängigen wissenschaftlichen Workflow mit konsistenten Citation Keys testen.
+- [x] Beim KI-Schreibworkflow nur ausdrücklich in gespeicherten LaTeX-Dateien zitierte, fehlende Quellen automatisch in die Projekt-`.bib` übernehmen; die menschliche Checkbox-Auswahl bleibt unabhängig davon erhalten.
+- [x] Wissenschaftlichen Workflow mit konsistenten Citation Keys über den gebündelten MCP-Prozess testen; neue Zotero-Schreibabläufe live noch separat prüfen.
 
 ## Übergreifende Qualität und Datenintegrität
 
@@ -876,3 +882,67 @@ Fehlerkorrektur der Projektsperre am 11. Oktober 2026:
   Extension, der offizielle MCP-Transporttest mit dem entpackten Server.
   Paketdateien und MCP-Dokumentation stimmen per SHA-256 mit dem geprüften Stand überein.
 - Alle sechs Review-Befunde F1–F6 abgeschlossen.
+
+## Wissenschaftlicher Workflow, Quellennotizen und Wiederherstellung (12. Oktober 2026)
+
+- Acht zusätzliche MCP-Werkzeuge, insgesamt 24. `zotero_research` durchsucht zuerst
+  die ausgewählte Sammlung und Projekt-.bib; öffentliche Recherche folgt bei Bedarf
+  oder ausdrücklicher Erweiterung. Neue DOI-Treffer werden einzeln aufgelöst, mit
+  Anbieter/Herkunft sowie getrennten Verifikationsfehlern zurückgegeben. Identifier-
+  Metadatenprüfung bestätigt keine wissenschaftlichen Inhalte.
+- `zotero_sync_bibliography` übernimmt ausschließlich fehlende Quellen mit
+  ausdrücklichen Literaturreferenzen in gespeicherten LaTeX-Projektdateien.
+  Manuelle Einträge, Felder und Auswahl bleiben erhalten. Kommentare, Literalbeispiele
+  und bloße Alias-/Set-Definitionen zählen nicht. Unbekannte/mehrdeutige Schlüssel,
+  dynamische Argumente, Makro-Wrapper, `nocite{*}`, Exportabhängigkeiten und neue
+  Dubletten blockieren den Import. Der Abgleich kompiliert kein TeX, sieht keine
+  ungespeicherten Editorpuffer und berücksichtigt auch nicht eingebundene Projektdateien.
+- Bestehende Export-/Schlüssel-/Sicherungs-/Transaktionslogik wiederverwendet.
+  Quellenversionen, Mitgliedschaften, LaTeX-Dateibestand, Bib-Datei und Konfiguration
+  werden vor dem Schreiben erneut geprüft; Zotero-Neuanlagen und Recherche allein
+  importieren nichts automatisch in die .bib.
+- Notizen können aufgelistet, vollständig gelesen, als Text/HTML angelegt und
+  versionsgeschützt ersetzt werden. Persistente reservierte Notiz-Keys verhindern
+  Doppelanlagen nach Antwortverlust; eindeutig abgelehnte Anlagen bleiben unter
+  derselben Anfrage-ID wiederholbar. Elternquelle, Sammlung, Version und Inhalt
+  werden geprüft, Projektdateien bleiben unverändert.
+- Papierkorbquellen werden nach Sammlung/Quellentyp gefiltert. Wiederherstellen
+  eines eindeutigen Item-Keys schreibt nur `deleted: 0`, erhält Mitgliedschaften,
+  prüft den Zustand erneut und liefert bei Wiederholung `already-restored`.
+- Build, beide TypeScript-Projekte und 471 Tests erfolgreich. Der offizielle MCP-
+  Client prüft alle neuen Werkzeuge über den tatsächlichen gebündelten stdio-Prozess.
+  Neue Zotero-Schreibabläufe sind mit simuliertem Backend geprüft; keine persönlichen
+  Quellen oder Notizen wurden für diese Implementierung live verändert.
+
+## MCP-Sammlungen und geschützte Projektzuordnung (12. Oktober 2026)
+
+- Vier weitere Werkzeuge, insgesamt 28: `zotero_get_collection`,
+  `zotero_create_collection`, `zotero_set_project_collection` und
+  `zotero_delete_collection`. Sammlungslisten können für die Ersteinrichtung
+  eine ausdrückliche Bibliothek aus der lokalen Bibliotheksauswahl durchsuchen.
+- Oberste Ebene und Unter-Sammlungen mit reserviertem Key/Anfragejournal anlegen;
+  verlorene Antworten werden ohne Doppelanlage aufgelöst, eindeutig abgelehnte
+  Anfragen unter demselben Key wiederholt. Elternversion und Datenbank nach
+  der Zotero-Freigabe nochmals prüfen und gespeicherten Namen/Eltern rücklesen.
+- Projektzuordnung verwendet dieselben Bindungs-/Bereinigungsfunktionen wie
+  **Set library**. Gemeinsame Quellen behalten Felder und stabile Keys; andere
+  aktive Bib-Einträge und ihre Zitate sowie abhängige Bib-Verweise werden gesichert
+  bereinigt. Neue Sammlungsquellen werden nicht importiert. Bib-Pfad, Stil und
+  Zitierbefehl bleiben erhalten; Bibliotheks-/Datenbankwechsel mit Imports ist gesperrt.
+- Die aktive Sammlung und ihre Vorfahren dürfen niemals gelöscht werden.
+  Die Sperre gilt auch für angeforderte Unter-Sammlungs-Löschung und wird vor
+  sowie nach der Autorisierung geprüft. Zuerst erfolgreich eine andere Sammlung
+  zuordnen; eine Vorschau genügt nicht. Löschung wählt keine Sammlung automatisch ab.
+- DELETE verwendet die gelesene Objektversion und prüft die Abwesenheit aller
+  betroffenen Sammlungen. Unter-Sammlungen benötigen eine ausdrückliche Auswahl;
+  Quellen und andere Mitgliedschaften bleiben erhalten, Projektdateien unverändert.
+- Gemeinsame Projektsperre für MCP und Extension verhindert gleichzeitiges
+  Zuordnen/Löschen; ein echter Extension-Bundle-Test prüft das Blockieren des
+  registrierten **Set library**-Befehls während einer gehaltenen MCP-Sperre.
+- Build, beide TypeScript-Projekte und 488 Tests bestanden. Tests prüfen Gruppen,
+  gemeinsamen/fehlenden/leeren Bestand, Vorschau und tatsächlichen Wechsel,
+  ursprüngliche Felder/Keys/Backups, verlorene/abgelehnte Antworten, Versionen,
+  Hierarchien und Änderungen während Autorisierung/Vorbereitung. Der offizielle
+  MCP-Client führt den Ablauf Anlegen–Zuordnen–gesperrt Löschen–Wechseln–Löschen
+  über den tatsächlichen gebündelten Server aus. Zotero-Schreibprüfungen bleiben
+  simuliert; keine persönlichen Sammlungen wurden angelegt oder gelöscht.

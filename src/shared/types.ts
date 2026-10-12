@@ -21,6 +21,13 @@ export interface ZoteroCollection {
   readonly parentKey: string | null;
 }
 
+export interface ZoteroCollectionDetail {
+  readonly collection: ZoteroCollection;
+  readonly version: number;
+  readonly data: Record<string, unknown>;
+  readonly serverId?: string;
+}
+
 export interface ZoteroCreator {
   readonly creatorType: string;
   readonly firstName: string;

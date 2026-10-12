@@ -14,7 +14,33 @@ Stand: 12. Oktober 2026. Der Projektauftrag ist in
 | `src/pdf/` | Historische Platzhalter | Keine lokale Textextraktion auf Benutzerwunsch; Agent erhält PDF-Dateien |
 | `src/research/` | Externe Recherche und Metadatenverifikation | Crossref-DOI-/Titelsuche mit Metadatenvorschau |
 | `src/shared/` | Typen und einheitliche Fehler | Vorhanden |
-| `mcp/` | Eigenständiger Prozess über stdio | Elf Werkzeuge für Codex, Claude und andere lokale MCP-Clients |
+| `mcp/` | Eigenständiger Prozess über stdio | 28 Werkzeuge für Codex, Claude und andere lokale MCP-Clients |
+
+Die wissenschaftliche Orchestrierung liegt in `ZoteroProjectService.research`:
+Bestandsprüfung in Zotero/Projekt-.bib vor optionaler externer Suche, danach
+Identifier-Auflösung mit Herkunft. `src/biblatex/scientificWorkflow.ts` verbindet
+den vorhandenen Zitationsparser mit Export, stabilen Projektschlüsseln und der
+gesicherten Dateitransaktion. Es werden nur fehlende ausdrücklich referenzierte
+Quellen importiert; manueller Bestand bleibt erhalten. Der Server verarbeitet
+gespeicherte Dateien, ohne TeX-Kompilation oder Zugriff auf Editorpuffer.
+
+`src/zotero/notes.ts` verwaltet Text-/HTML-Notizen und persistente Neuanlagejournale.
+Der vorhandene Schreibadapter übernimmt Freigaben, bedingte PATCH-Anfragen und
+Wiederherstellung per `deleted: 0`. Alle Aktionen behalten den Projektscope bei.
+Details und Prüfgrenzen: [MCP-Workflow](MCP.md#wissenschaftlicher-ablauf-notizen-und-wiederherstellung).
+
+Sammlungsanlage und Hierarchieschutz liegen in `src/zotero/collectionOperations.ts`.
+`src/zotero/projectCollection.ts` übernimmt Projektzuordnungen mit denselben
+`withProjectLibrary`-/`planCollectionChange`-Regeln wie **Set library**. Der Writer
+ergänzt Sammlungs-POST und versionsgeschütztes DELETE. Der Service sperrt die aktive
+Projekt-Sammlung und jeden Vorfahren vor sowie nach der Autorisierung; er löst die
+Bindung beim Löschen niemals selbst. Neuanlagejournale reservieren wiederverwendbare Keys.
+
+`src/config/projectLock.ts` stellt die gemeinsame Dateisperre für Extension-
+Projektaktionen und MCP-Schreibaktionen bereit. Dadurch kann eine Collection-Zuordnung
+im Editor nicht parallel zu einem MCP-Löschvorgang geschrieben werden. Die Prüfung
+von Versions-/Hierarchie-/Dateisnapshots bleibt zusätzlich aktiv. Der standalone MCP-
+Server sieht ausschließlich gespeicherte Dateien. [Sammlungsablauf](MCP.md#sammlungen-anlegen-zuordnen-und-löschen).
 
 Extension und MCP-Server verwenden das offizielle MCP-SDK 2.3.1, Zod und einen
 TOML-Parser für die Codex-Einrichtung. `scripts/bundle.cjs` bündelt alle benötigten
@@ -423,8 +449,9 @@ Neuanlagen haben eine stabile Anfrage-ID, einen persistenten Digest und einen
 vor dem Schreiben gespeicherten Zotero-Key unter `.zotero/mcp/requests/`.
 `version: 0` begrenzt den ersten POST auf ein neues Objekt. Wiederholungen lesen
 diesen Key zurück und senden den POST nicht erneut. Eine Projektsperre über
-`.zotero/mcp/write.lock` schützt mehrere MCP-Prozesse dieses Projekts. Ein
-Absturz kann eine manuell nach beendetem Prozess zu bereinigende Sperre hinterlassen.
+`.zotero/mcp/write.lock` schützt mehrere MCP-Prozesse und Extension-Projektaktionen.
+Ein Absturz kann eine Sperre hinterlassen, die erst nach Ende aller beteiligten
+Prozesse und Projektaktionen manuell bereinigt werden darf.
 
 Papierkorb prüft vorab zusätzliche Sammlungen und Zitationen mit dem vorhandenen
 transportneutralen TeX-Planer, ohne dessen Dateiplan anzuwenden. Danach werden

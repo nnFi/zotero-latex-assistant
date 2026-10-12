@@ -1,10 +1,211 @@
 # MCP mit Codex und Claude
 
 Stand: 12. Oktober 2026. Der lokale stdio-Server unterstützt Lesen, bibliografische
-Neuanlage, gezielte Quellenaktualisierung, wiederherstellbares Verschieben in den
-Zotero-Papierkorb, Anhängen lokaler PDFs als gespeicherte Kopie und Weitergabe
+Neuanlage, gezielte Quellenaktualisierung, Notizverwaltung, wissenschaftliche Recherche
+mit zitatabhängigem Bib-Import, Verschieben in den Zotero-Papierkorb und Wiederherstellung,
+Anhängen lokaler PDFs als gespeicherte Kopie und Weitergabe
 angehängter PDFs an den Agenten.
+Sammlungen können angelegt, dem Projekt zugeordnet und nach einem Wechsel gelöscht werden.
 Es gibt keine lokale Textextraktion, OCR oder serverseitige Modellanalyse.
+
+## Sammlungen anlegen, zuordnen und löschen
+
+**Die zugeordnete Projekt-Sammlung darf nicht gelöscht werden.** Das gilt ebenso
+für jede übergeordnete Sammlung, deren Löschung diese Sammlung mit entfernen würde.
+Die Sperre lässt sich durch `includeDescendants` oder eine alte Versionsangabe nicht
+umgehen. Zuerst die Projektzuordnung erfolgreich wechseln, danach die bisherige
+Sammlung löschen. Eine reine Vorschau wechselt die Zuordnung noch nicht.
+
+- `zotero_list_collections` zeigt Sammlungsnamen, Keys und Eltern. Optional eine
+  ausdrückliche `library` aus `zotero_list_libraries` angeben, um schon vor der
+  ersten Projektzuordnung deren Sammlungen zu sehen. Das gewährt keinen zusätzlichen
+  Quellenzugriff und ändert die Projektbindung nicht.
+- `zotero_get_collection({library,collectionKey})` liefert die Sammlung und ihre
+  `version`, Unter-Sammlungskeys sowie `assignedToProject`/`deletionBlocked`.
+  Sammlungsnamen sind nicht eindeutig; Auswahl und Löschung erfolgen nach Keys.
+- `zotero_create_collection` legt eine Sammlung in der konfigurierten Bibliothek
+  an. `parentCollectionKey: null` (Standard) bedeutet oberste Ebene; ein Key legt
+  eine Unter-Sammlung an. Eine Bibliotheks-/Zotero-10-Bindung reicht aus, es muss
+  noch keine Sammlung ausgewählt sein. Die Anlage ordnet das Projekt nicht automatisch zu.
+
+```json
+{"name":"Neue Arbeit","parentCollectionKey":null,"requestId":"collection-2026-001"}
+```
+
+Neuanlagen reservieren den Key unter `.zotero/mcp/collections/`. Nach Antwortverlust
+dieselbe Anfrage-ID, denselben Namen und dieselbe Elternsammlung wiederverwenden:
+ein gespeicherter passender Eintrag liefert `already-created`; ungeklärte Ergebnisse
+werden nicht durch eine zweite Anlage ersetzt. Eindeutige HTTP-/Batch-Ablehnungen
+können unter dem reservierten Key erneut versucht werden. Elternversion, Projektbindung
+und Datenbank werden nach der Zotero-Freigabe nochmals geprüft, das Ergebnis rückgelesen.
+
+### Projektzuordnung wie „Set library“
+
+`zotero_set_project_collection` übernimmt die Regeln des Extension-Befehls und
+verwendet denselben `planCollectionChange` für die Bereinigung:
+
+```json
+{"library":{"type":"user","id":0},"collectionKey":"NEWCOL01","dryRun":false}
+```
+
+Beim Wechsel innerhalb derselben Bibliothek und Zotero-Datenbank bleiben bereits
+zugeordnete bzw. erkannte Quellen erhalten, die in der neuen Sammlung vorhanden sind.
+Ihre manuell bearbeiteten Bib-Felder und Projektschlüssel bleiben stabil. Andere
+Einträge der aktiven .bib einschließlich nicht zuordenbarer Einträge werden wie
+bei **Set library** entfernt; ihre LaTeX-Zitate und Verweise in weiteren lokalen
+Bib-Dateien werden bereinigt. Neue Quellen der Ziel-Sammlung werden nicht importiert.
+Eine leere Ziel-Sammlung bereinigt den alten Literaturbestand vollständig.
+
+Bib-Pfad, Zitierstil und Zitierbefehl bleiben erhalten. Bib-Dateien, betroffene
+LaTeX-Dateien und Konfiguration werden gemeinsam unter `.zotero/backups/bibliography-…`
+gesichert und bei Schreibfehlern zurückgesetzt. Dateibestand, Inhalte, Zielversion,
+Sammlungsmitgliedschaften und Projektbindung werden vor dem Schreiben erneut geprüft.
+`dryRun: true` zeigt entfernte Schlüssel, Anzahl entfernter Bib-Einträge, verbleibende
+Item-Keys und betroffene Dateien vorab; es verändert die Zuordnung nicht.
+
+Die Zuordnung funktioniert auch bei einem noch nicht konfigurierten Projekt oder
+fehlender .bib. Eine ausdrückliche `collectionKey: null` wählt wie **Set library**
+die gesamte Bibliothek; quellenbezogene Zotero-Schreibwerkzeuge bleiben dann gesperrt.
+Ein Wechsel der Bibliothek oder Datenbank mit vorhandenen Imports wird wie in der
+Extension blockiert: erst deren bestehenden **Delete all citations**-Ablauf verwenden.
+Der Server greift ausschließlich auf gespeicherte Dateien zu; vor dem Wechsel
+relevante Editoränderungen speichern. Es ist kein Zotero-Schreibdialog erforderlich,
+weil die Zuordnung nur Projektdateien ändert.
+
+### Sammlung nach dem Wechsel löschen
+
+Nach abgeschlossener Zuordnung eine alte Sammlung mit `zotero_get_collection`
+lesen und auf ausdrücklichen Auftrag löschen:
+
+```json
+{"library":{"type":"user","id":0},"collectionKey":"OLDCOL01","expectedVersion":10,"includeDescendants":false}
+```
+
+`zotero_delete_collection` prüft die Löschsperre vor jeder Autorisierung und erneut
+danach. Dazu gehören aktuelle Projektbindung, Hierarchie und Versionen aller
+betroffenen Sammlungen. Enthält die Sammlung Unter-Sammlungen, werden deren genaue
+Keys vorab angezeigt; erst ein ausdrücklicher Auftrag darf `includeDescendants: true`
+verwenden. Auch dann bleibt eine darin zugeordnete Projekt-Sammlung geschützt.
+
+Der Server verwendet versionsgeschütztes `DELETE` und prüft anschließend, dass
+alle betroffenen Sammlungen fehlen. Bereits fehlende, nicht geschützte Keys liefern
+`already-deleted`. Die Sammlung wird endgültig entfernt, die Quellen bleiben in
+Zotero; ihre übrigen Mitgliedschaften bleiben erhalten. .bib, LaTeX und Zuordnung
+werden bei der Löschung nicht geändert. Insbesondere gibt es kein automatisches
+Abwählen einer zugeordneten Sammlung als Teil des Löschvorgangs.
+
+MCP und Extension-Projektaktionen teilen sich `.zotero/mcp/write.lock`, damit eine
+gleichzeitige Zuordnung über **Set library** und MCP-Löschung nicht gegeneinander laufen.
+Die Löschsperre gilt für die Projektbindung des mit `--project` gestarteten Servers;
+Zotero stellt keinen projektübergreifenden Zuordnungsindex bereit.
+
+API-Grundlage: [Sammlungen erstellen/löschen](https://www.zotero.org/support/dev/web_api/v3/write_requests#collection_requests)
+und [Zotero-Sammlungsmodell](https://github.com/zotero/zotero/blob/main/chrome/content/zotero/xpcom/data/collection.js).
+
+## Wissenschaftlicher Ablauf, Notizen und Wiederherstellung
+
+Der Server stellt 28 Werkzeuge bereit. Der wissenschaftliche Ablauf ist in seinen
+Anweisungen verankert und über zwei zusätzliche Werkzeuge ausführbar:
+
+1. `zotero_research` sucht zuerst in der ausgewählten Zotero-Sammlung und der
+   konfigurierten Projekt-.bib. Bei lokalen Treffern bleibt die Standardsuche lokal.
+   `external: "always"` recherchiert nach dieser Bestandsprüfung weitere Quellen;
+   `external: "never"` beschränkt sie ausdrücklich auf den Bestand.
+2. Ohne vorhandene Treffer folgt eine Crossref-Titelsuche. Neue Treffer werden
+   einzeln über ihre DOI mit Crossref/DataCite aufgelöst. Eine eingegebene ISBN
+   wird mit Open Library geprüft. Ergebnisse enthalten Anbieter, Identifier,
+   Herkunfts-URL und Hinweise; nicht verifizierte Kandidaten stehen in `failures`.
+   Das bestätigt bibliografische Identität und Metadaten, keine wissenschaftlichen
+   Aussagen oder Eignung für eine konkrete Behauptung (`contentVerified: false`).
+   Dafür Publikation/PDF und belegbare Fundstellen selbst prüfen.
+3. Gewünschte neue Quellen über `zotero_import_identifier` nach Benutzerauftrag
+   in Zotero speichern; geeignete vorhandene Quellen wiederverwenden.
+   Recherche, Notizen und Zotero-Neuanlagen übernehmen nichts in die .bib.
+4. Nach dem beauftragten Schreiben mit Zitationen LaTeX-Dateien speichern und
+   `zotero_sync_bibliography` aufrufen. Der Server ermittelt selbst die ausdrücklich
+   referenzierten Schlüssel aus gespeicherten `.tex`, `.ltx`, `.sty` und `.cls`
+   im Projekt. Nur fehlende, eindeutig auflösbare Quellen werden automatisch
+   übernommen. Kommentare, Verbatim-Beispiele und reine Alias-/Set-Definitionen
+   zählen nicht. Die menschliche Checkbox-Auswahl und bestehende manuelle Felder
+   bleiben erhalten; unzitierte vorhandene Einträge werden nicht entfernt.
+
+```json
+{"query":"Publikationstitel","external":"if-missing","limit":5}
+```
+
+Aufruf von `zotero_sync_bibliography`:
+
+```json
+{"exporter":"better-biblatex","dryRun":false}
+```
+
+`dryRun: true` zeigt die fehlenden Imports vorab. Der Standard verwendet Better
+BibLaTeX; `exporter: "native"` wählt ausdrücklich den nativen Zotero-Exporter.
+Unbekannte/mehrdeutige Schlüssel, dynamische Zitierargumente, `\nocite{*}`,
+unaufgelöste Exportabhängigkeiten und Dubletten verhindern den automatischen Import.
+Explizite `\nocite{Schlüssel}` gelten als gewünschte Literaturreferenzen.
+Es wird kein TeX kompiliert: geprüft werden unterstützte Befehle in den gespeicherten
+Projektdateien, einschließlich lokaler `DeclareCiteCommand`-/`DeclareMultiCiteCommand`-
+Befehle. Nicht eingebundene Projektdateien werden ebenfalls berücksichtigt.
+Eigene Makro-Wrapper mit dynamischen Schlüsselargumenten müssen vorab aufgelöst werden.
+Dateipfade unterliegen dem bestehenden Pfad-/Symlinkschutz. .bib und Schlüsselzuordnung
+werden gemeinsam gesichert und mit Rücksetzen bei Fehlern geschrieben; geänderte
+LaTeX-Dateien, Quellenversionen, Sammlung oder Projektbindung verhindern das Schreiben.
+Der eigenständige Server sieht keine ungespeicherten Editorpuffer: relevante Dateien
+vorher speichern. Er führt keine Hintergrundüberwachung aus; der Agent ruft den
+Abgleich nach seinem Schreibauftrag auf. Der Import braucht keine Zotero-Schreibfreigabe.
+
+### Quellennotizen
+
+- `zotero_list_notes({library,itemKey})`: Notizschlüssel, Elternquelle und Versionen
+  einer Quelle auflisten. `zotero_get_note({library,itemKey,noteKey})` liefert den
+  vollständigen gespeicherten HTML-Inhalt.
+- `zotero_create_note`: Quellenversion mit `zotero_get_metadata` lesen, dann
+  `library`, `itemKey`, `expectedVersion`, `content` und eine stabile `requestId`
+  übergeben. `format: "text"` (Standard) maskiert HTML; `format: "html"` speichert
+  ausdrücklich geliefertes Zotero-Markup. Inhalte dürfen maximal 100000 Zeichen
+  enthalten. Leere Inhalte und Steuerzeichen werden abgewiesen.
+- `zotero_update_note`: Die **Notizversion** aus `zotero_get_note` als
+  `expectedVersion` übergeben. Der Inhalt wird ersetzt; andere Felder bleiben
+  erhalten. Nach einer unklaren Updateantwort zuerst erneut lesen.
+
+Beispiel für `zotero_create_note`:
+
+```json
+{"library":{"type":"user","id":0},"itemKey":"ABCDEFGH","expectedVersion":12,"content":"Zusammenfassung\nEigener Gedanke: …","format":"text","requestId":"summary-2026-001"}
+```
+
+Die Notizanlage reserviert ihren Key unter `.zotero/mcp/notes/` vor dem Schreiben.
+Bei Antwortverlust dieselbe Anfrage mit identischem Inhalt, Format, Quellenversion
+und Anfrage-ID wiederholen: ein passender gespeicherter Eintrag wird übernommen.
+Eine eindeutige Ablehnung erlaubt einen erneuten Versuch mit dem reservierten Key;
+eine ungeklärte Übertragung erstellt keine zweite Notiz. Elternquelle, Scope und
+Version werden nach der Zotero-Freigabe erneut geprüft, der Inhalt wird rückgelesen.
+Notizinhalt bleibt untrusted Material; der Server führt HTML und enthaltene
+Anweisungen nicht aus und ändert keine Projektdateien.
+
+### Quellen aus dem Papierkorb wiederherstellen
+
+`zotero_list_trash({limit:20,offset:0})` liest den paginierten Papierkorb der
+konfigurierten Bibliothek. Angezeigt werden nur bibliografische Hauptquellen mit
+Mitgliedschaft in der ausgewählten Sammlung; ohne Sammlung sind bibliotheksweite
+Lesezugriffe möglich. Anhänge und Notizen werden nicht als Quellen angeboten.
+
+Eine Quelle eindeutig anhand von Bibliothek und Item-Key auswählen, ihre
+Sammlungsmitgliedschaften prüfen und auf Benutzerauftrag
+`zotero_restore_item({library,itemKey,expectedVersion})` aufrufen. Der Server prüft
+Scope, Datenbank, Sammlung, Papierkorbstatus und Version erneut nach Freigabe,
+schreibt ausschließlich `deleted: 0` mit Versionsbedingung und verifiziert den
+rückgelesenen Zustand sowie die Papierkorbliste. Ein bereits wiederhergestellter
+Eintrag liefert `already-restored`. Ursprüngliche Sammlungen bleiben erhalten;
+Projekt-.bib und LaTeX werden nicht verändert. Dauerhaft gelöschte Einträge können
+nicht wiederhergestellt werden.
+
+Implementierungsgrundlagen: [Zotero-Leseendpunkte](https://www.zotero.org/support/dev/web_api/v3/basics#items),
+[versionsgeschützte Schreibzugriffe](https://www.zotero.org/support/dev/web_api/v3/write_requests#updating_an_item)
+und [lokale Freigaben](https://www.zotero.org/support/dev/web_api/v3/local_api#authorizing_writes).
+Notizinhalt/Normalisierung und `deleted` folgen dem
+[Zotero-Item-Modell](https://github.com/zotero/zotero/blob/main/chrome/content/zotero/xpcom/data/item.js).
 
 ## Voraussetzungen und Einrichtung
 
@@ -19,7 +220,8 @@ Zahnrad-Menü der Zotero-Seitenleiste (**Configure project**):
 - Den lokalen LaTeX-Projektordner öffnen und über **Zotero: Set library** die
   Bibliothek und ausdrücklich die gewünschte Sammlung auswählen. Dadurch werden
   Bibliothek, Sammlung und bei Zotero 10 die Server-ID in `.zotero/config.json` gespeichert.
-  Eine `.bib`-Datei ist für diese MCP-Werkzeuge nicht erforderlich.
+  Eine `.bib`-Datei ist für Zotero-Lese-/Schreibwerkzeuge nicht erforderlich;
+  `zotero_sync_bibliography` braucht den konfigurierten Projekt-Bib-Pfad.
 - Ein VSIX über `npm ci && npm run package` bauen und installieren oder mit F5 den
   Extension Development Host starten. Das Paket enthält `dist/mcp/server.cjs`
   einschließlich seiner Laufzeitabhängigkeiten. Der Rechner benötigt kein globales MCP-SDK.
@@ -267,17 +469,17 @@ bleiben wirksam. Das Paket konfiguriert keine pauschale automatische Schreibfrei
   wiederholbar. Timeouts, Netzwerkabbrüche, HTTP 408/5xx, unvollständige Antworten
   und Fehler beim Rücklesen nach erfolgreichem POST bleiben unklare Ausgänge.
   Bereits vorhandene unklare Journale werden nicht automatisch zurückgesetzt.
-- `.zotero/mcp/write.lock` sperrt konkurrierende MCP-Schreibabläufe pro Projekt.
+- `.zotero/mcp/write.lock` sperrt konkurrierende MCP-Schreibabläufe und Extension-Projektaktionen.
   Nach einem Prozessabsturz die Sperre nur entfernen, wenn alle zu diesem Projekt
-  gehörenden Zotero-MCP-Prozesse beendet sind. Anfrageprotokolle zum Schutz vor
+  gehörenden Zotero-MCP-Prozesse und Extension-Projektaktionen beendet sind. Anfrageprotokolle zum Schutz vor
   Doppelanlagen erhalten. Außerhalb dieses Projekts gestartete MCP-Prozesse und
   manuelle Zotero-Änderungen sind nicht durch diese Projektsperre koordiniert.
-- Löschen verwendet ausschließlich `PATCH { "deleted": 1 }` mit
+- Quellenlöschen verwendet ausschließlich `PATCH { "deleted": 1 }` mit
   `If-Unmodified-Since-Version`; anschließend werden Einzelobjekt und
   `items/trash` mit Paginierung und lokalem Key-Vergleich geprüft. Die lokale
   Version 10.0.6 liefert beim `itemKey`-Filter keine Papierkorbtreffer;
   `deleted: true` und `deleted: 1` werden als Papierkorbstatus erkannt. HTTP `DELETE` wäre endgültiges Löschen und wird
-  nicht verwendet. Wiederholung gibt `already-trashed` zurück.
+  für Quellen nicht verwendet. Wiederholung gibt `already-trashed` zurück.
 - Metadaten und Papierkorbergebnis nennen weitere Sammlungszugehörigkeiten,
   Projektimport, tatsächliche Bib-Zugehörigkeit und erkannte LaTeX-Zitationsdateien.
   Die vorhandene Bestandserkennung berücksichtigt persistierte, Extra- und bei
@@ -469,11 +671,15 @@ Das [MCP-Prüfprotokoll](mcp-smoke-report.json) hält die Ergebnisse fest:
 - Claude Code 2.1.136 verband den Server und erkannte alle acht Werkzeuge. Der
   eigentliche Modellaufruf scheiterte mit `401`, weil die Anmeldung abgelaufen
   war. Claude-Lesen und Claude-Schreiben sind bis zur erneuten Anmeldung offen.
-- Automatisierte Tests prüfen alle sechzehn Werkzeuge mit dem offiziellen MCP-Client
+- Automatisierte Tests prüfen alle 28 Werkzeuge mit dem offiziellen MCP-Client
   über den gebündelten stdio-Prozess sowie Neuanlage, Zuordnung, Dubletten,
   Wiederholung nach verlorener Antwort, Papierkorb, Fremdscope, Datenbankwechsel,
   Versionskonflikte, verweigerte/abgelaufene Freigaben und Änderungen während des
   Autorisierungsdialogs. Beide TypeScript-Projekte werden geprüft.
+- Sammlungsverwaltung: 488 Tests bestanden, einschließlich Zuordnen wie **Set library**,
+  gesperrter Löschung der aktiven Sammlung/Vorfahren, erfolgreichem Wechsel vor
+  Löschung und gemeinsamer Extension-/MCP-Projektsperre. Neue Sammlungs-Schreibabläufe
+  wurden mit simuliertem Zotero geprüft; keine persönlichen Sammlungen live verändert.
 - DOI-/ISBN-Erweiterung: 327 Tests bestanden. Crossref-Auflösung für
   `10.1038/nature12373`, Open-Library-Auflösung für `9780306406157` und das native
   `citationKey`-Feld der laufenden lokalen Zotero-Version wurden nur lesend live

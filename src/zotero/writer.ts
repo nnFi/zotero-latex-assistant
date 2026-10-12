@@ -1,6 +1,6 @@
 import { ZoteroClient, type ZoteroClientOptions } from "./client";
 import { ZoteroError } from "../shared/errors";
-import type { LibraryRef, ZoteroItemDetail } from "../shared/types";
+import type { LibraryRef, ZoteroCollectionDetail, ZoteroItemDetail } from "../shared/types";
 import { isRecord, isTrashedData, libraryPrefix, validateKey } from "./validation";
 import type { UploadPdf } from "./attachmentFiles";
 
@@ -59,6 +59,36 @@ export class ZoteroWriter extends ZoteroClient {
     return this.getItem(library, key);
   }
 
+  async createCollection(library: LibraryRef, serverId: string, key: string, name: string, parentKey: string | null,
+    preflight: () => Promise<void>, onRejected: () => Promise<void>): Promise<ZoteroCollectionDetail> {
+    const response = await this.authorizedWrite(serverId, `${libraryPrefix(library)}/collections`, "POST",
+      [{ key: validateKey(key), version: 0, name, parentCollection: parentKey ? validateKey(parentKey) : false }], {}, preflight, true, onRejected);
+    const result = await this.readJson(response);
+    if (isRecord(result) && isRecord(result.successful) && !Object.keys(result.successful).length
+      && isRecord(result.unchanged) && !Object.keys(result.unchanged).length && isRecord(result.failed)
+      && Object.keys(result.failed).length === 1 && isRecord(result.failed["0"])
+      && (result.failed["0"].key === undefined || result.failed["0"].key === key) && rejectedWithoutWrite(result.failed["0"].code)) {
+      await onRejected();
+      throw new ZoteroError("HTTP_ERROR", "Zotero rejected collection creation. Retry the same requestId and input.", { status: result.failed["0"].code as number });
+    }
+    if (!isRecord(result) || !isRecord(result.successful) || !isRecord(result.successful["0"])
+      || result.successful["0"].key !== key || (isRecord(result.failed) && Object.keys(result.failed).length)) {
+      throw new ZoteroError("INVALID_RESPONSE", "Collection creation is uncertain. Inspect the allocated key before retrying.");
+    }
+    this.clearCache();
+    return this.getCollectionDetail(library, key);
+  }
+
+  async deleteCollection(detail: ZoteroCollectionDetail, preflight: () => Promise<void>): Promise<void> {
+    if (!detail.serverId) throw new ZoteroError("WRITE_UNSUPPORTED", "Collection deletion requires Zotero 10 or newer.");
+    const response = await this.authorizedWrite(detail.serverId,
+      `${libraryPrefix(detail.collection.library)}/collections/${validateKey(detail.collection.key)}`, "DELETE", undefined,
+      { "If-Unmodified-Since-Version": String(detail.version) }, preflight);
+    await response.body?.cancel();
+    if (response.status !== 204) throw new ZoteroError("INVALID_RESPONSE", "Zotero did not confirm collection deletion. Inspect it before retrying.");
+    this.clearCache();
+  }
+
   /** deleted=1 is recoverable trash; DELETE would permanently erase the source. */
   async trashItem(detail: ZoteroItemDetail, preflight: () => Promise<void>): Promise<ZoteroItemDetail> {
     if (!detail.serverId) throw new ZoteroError("WRITE_UNSUPPORTED", "Trashing requires Zotero 10 or newer.");
@@ -70,6 +100,20 @@ export class ZoteroWriter extends ZoteroClient {
     const saved = await this.getItem(detail.item.library, detail.item.key);
     if (!isTrashedData(saved.data) || !await this.isItemTrashed(detail.item.library, detail.item.key)) {
       throw new ZoteroError("INVALID_RESPONSE", "The write completed, but the trash state could not be verified. Inspect Zotero before retrying.");
+    }
+    return saved;
+  }
+
+  async restoreItem(detail: ZoteroItemDetail, preflight: () => Promise<void>): Promise<ZoteroItemDetail> {
+    if (!detail.serverId) throw new ZoteroError("WRITE_UNSUPPORTED", "Restoring requires Zotero 10 or newer.");
+    const response = await this.authorizedWrite(detail.serverId,
+      `${libraryPrefix(detail.item.library)}/items/${validateKey(detail.item.key)}`, "PATCH", { deleted: 0 },
+      { "If-Unmodified-Since-Version": String(detail.version) }, preflight);
+    await response.body?.cancel();
+    this.clearCache();
+    const saved = await this.getItem(detail.item.library, detail.item.key);
+    if (saved.serverId !== detail.serverId || isTrashedData(saved.data) || await this.isItemTrashed(detail.item.library, detail.item.key)) {
+      throw new ZoteroError("INVALID_RESPONSE", "The restored source could not be verified. Read its metadata before retrying.");
     }
     return saved;
   }
@@ -108,7 +152,7 @@ export class ZoteroWriter extends ZoteroClient {
     if (registered.status !== 204) throw new ZoteroError("INVALID_RESPONSE", "Zotero did not confirm registering the PDF file.");
   }
 
-  private async authorizedWrite(serverId: string, path: string, method: "POST" | "PATCH", body: unknown,
+  private async authorizedWrite(serverId: string, path: string, method: "POST" | "PATCH" | "DELETE", body: unknown,
     headers: Record<string, string>, preflight?: () => Promise<void>, json = true, onRejected?: () => Promise<void>): Promise<Response> {
     this.clearCache();
     const connection = await this.checkConnection();
@@ -132,7 +176,7 @@ export class ZoteroWriter extends ZoteroClient {
       try {
         const response = await this.request(path, {
           method, headers: { "Content-Type": "application/json", "Zotero-API-Key": key,
-            "Zotero-Server-ID": serverId, ...headers }, body: json ? JSON.stringify(body) : String(body),
+            "Zotero-Server-ID": serverId, ...headers }, ...(body === undefined ? {} : { body: json ? JSON.stringify(body) : String(body) }),
         });
         return response;
       } catch (error) {

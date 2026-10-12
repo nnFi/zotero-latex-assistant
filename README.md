@@ -6,14 +6,29 @@ Klassische Literaturverwaltung und KI-Unterstützung über den lokalen MCP-Serve
 **Aktueller Stand:** Zotero-Seitenleiste mit Bibliotheken, hierarchischen Sammlungen,
 Projektzuordnung in `.zotero/config.json`, gezieltem BibLaTeX-Import,
 Quellenliste mit Mehrfachauswahl, Einfügen von LaTeX-Zitationen und DOI-/Titelsuche über Crossref.
-Der lokale MCP-Server bietet außerdem elf Werkzeuge für Lesen, Dublettenprüfung, Quellenaktualisierung,
-bibliografische Neuanlage, wiederherstellbaren Zotero-Papierkorb und PDF-Weitergabe
+Der lokale MCP-Server bietet außerdem 28 Werkzeuge für Lesen, wissenschaftliche Recherche,
+zitatabhängigen Bib-Import, Notizen, Dublettenprüfung, Quellenaktualisierung,
+bibliografische Neuanlage, Zotero-Papierkorb mit Wiederherstellung, Sammlungsverwaltung und PDF-Weitergabe
 an den Agenten. PDFs werden unverändert als Datei übergeben, ohne lokale Textextraktion.
 **Zotero: Set up Codex MCP connection** und **Zotero: Set up Claude MCP connection**
 richten das aktuelle Projekt für die jeweiligen VS-Code-KI-Erweiterungen ein.
 Beide Aktionen sind auch über das Zahnrad in der Zotero-Seitenleiste auswählbar.
 Einrichtung, Freigaben und tatsächlich geprüfte Ergebnisse: [MCP mit Codex und Claude](docs/MCP.md).
 Die vollständige Aufgabenliste steht in [PROJEKTSTATUS.md](PROJEKTSTATUS.md).
+
+Der wissenschaftliche MCP-Ablauf durchsucht mit `zotero_research` zunächst Zotero
+und die Projekt-.bib, verifiziert neue Identifier-Metadaten und übernimmt nach dem
+Schreiben nur fehlende Quellen mit ausdrücklichen Zitaten in gespeicherten
+LaTeX-Dateien über `zotero_sync_bibliography`. Die manuelle Checkbox-Auswahl bleibt
+erhalten. Quellennotizen lassen sich auflisten, lesen, anlegen und versionsgeschützt
+aktualisieren; eindeutig ausgewählte Papierkorbeinträge können wiederhergestellt
+werden. [Ablauf, Beispiele und Grenzen](docs/MCP.md#wissenschaftlicher-ablauf-notizen-und-wiederherstellung).
+
+Über MCP lassen sich außerdem Sammlungen und Unter-Sammlungen anlegen, Sammlungen
+dem Projekt wie über **Set library** zuordnen und nicht zugeordnete Sammlungen löschen.
+Die aktuell zugeordnete Sammlung und ihre übergeordneten Sammlungen sind gegen
+Löschen gesperrt. Erst erfolgreich zu einer anderen Sammlung wechseln, dann löschen.
+[Sammlungswerkzeuge](docs/MCP.md#sammlungen-anlegen-zuordnen-und-löschen).
 
 ## Entwicklung starten
 
@@ -518,7 +533,7 @@ src/
   config/                .zotero-Projektkonfiguration und sichere Projektdateien
   shared/                Gemeinsame Typen und Fehler
 mcp/
-  server.ts              Eigenständiger stdio-Server mit elf Werkzeugen
+  server.ts              Eigenständiger stdio-Server mit 28 Werkzeugen
   tools/                 Werkzeugübersicht
 test/                    Tests mit simulierten Zotero-Antworten
 docs/                    Projektauftrag und Architekturentscheidungen

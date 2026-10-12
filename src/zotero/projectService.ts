@@ -1,5 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import * as path from "node:path";
 import { CONFIG_FILE, projectPath, readProjectConfig, readProjectText, writeProjectText } from "../config/project";
 import type { LibraryRef, ProjectConfig, ZoteroAttachment, ZoteroItemDetail } from "../shared/types";
@@ -23,6 +23,13 @@ import { IdentifierClient, normalizeIdentifier, type IdentifierResult } from "..
 import { bibEntries } from "../biblatex/importer";
 import { normalizeIsbn } from "../research/isbn";
 import { importLocalPdf } from "./pdfImport";
+import { createSourceNote, noteContent, sourceNote } from "./notes";
+import { syncCitedBibliography } from "../biblatex/scientificWorkflow";
+import { CrossrefClient } from "../research/crossref";
+import { bibliographyRecords } from "../biblatex/fields";
+import { assertCollectionDeletionAllowed, collectionSubtree, createProjectCollection } from "./collectionOperations";
+import { setProjectCollection } from "./projectCollection";
+import { withProjectWriteLock } from "../config/projectLock";
 
 interface Scope { config: ProjectConfig; snapshot: string; client: ZoteroClient; library: LibraryRef }
 interface Journal { digest: string; key: string; state: "prepared" | "submitted" | "complete" }
@@ -162,15 +169,225 @@ export class ZoteroProjectService {
       writeReady: Boolean(config.collectionKey && config.serverId) };
   }
 
-  async listCollections(): Promise<unknown> {
+  async listCollections(requestedLibrary?: LibraryRef): Promise<unknown> {
+    if (requestedLibrary) {
+      const config = await readProjectConfig(this.root);
+      const client = new ZoteroClient({ ...this.options, ...(config?.serverId ? { serverId: config.serverId } : {}) });
+      client.clearCache(); await client.checkConnection();
+      return { library: requestedLibrary, collections: await client.listAllCollections(requestedLibrary) };
+    }
     const { client, library } = await this.scope();
     return { library, collections: await client.listAllCollections(library) };
+  }
+
+  async collection(library: LibraryRef, key: string) {
+    const scope = await this.scope();
+    this.assertLibrary(library, scope.library);
+    const detail = await scope.client.getCollectionDetail(library, validateKey(key));
+    const subtree = collectionSubtree(await scope.client.listAllCollections(library), key);
+    await this.unchanged(scope);
+    return { ...detail, descendantCollectionKeys: subtree.filter((entry) => entry !== key),
+      assignedToProject: scope.config.collectionKey === key,
+      deletionBlocked: Boolean(scope.config.collectionKey && subtree.includes(scope.config.collectionKey)) };
+  }
+
+  async createCollection(name: string, parentKey: string | null, requestId: string) {
+    return this.writeLock(async () => {
+      const scope = await this.scope();
+      if (!scope.config.serverId) throw new ZoteroError("WRITE_UNSUPPORTED", "Collection creation requires a saved Zotero 10 database binding. Set the project library first.");
+      return createProjectCollection({ root: this.root, client: scope.client, library: scope.library, serverId: scope.config.serverId,
+        writer: new ZoteroWriter({ ...this.options, serverId: scope.config.serverId }, this.secrets), checkProject: () => this.unchanged(scope) }, name, parentKey, requestId);
+    });
+  }
+
+  async setCollection(library: LibraryRef, collectionKey: string | null, dryRun = false) {
+    return this.writeLock(() => setProjectCollection(this.root, this.options, library, collectionKey, dryRun));
+  }
+
+  async deleteCollection(library: LibraryRef, key: string, expectedVersion: number, includeDescendants = false) {
+    return this.writeLock(async () => {
+      const scope = await this.scope();
+      this.assertLibrary(library, scope.library); validateKey(key);
+      if (!scope.config.serverId) throw new ZoteroError("WRITE_UNSUPPORTED", "Collection deletion requires a saved Zotero 10 database binding.");
+      const collections = await scope.client.listAllCollections(library);
+      if (scope.config.collectionKey && !collections.some((entry) => entry.key === scope.config.collectionKey)) {
+        throw new ZoteroError("INVALID_RESPONSE", "The assigned collection is missing from the hierarchy. Safe collection deletion cannot be established.");
+      }
+      const subtree = collectionSubtree(collections, key);
+      // Never relax this rule, even when descendants were explicitly requested or the key is already absent.
+      assertCollectionDeletionAllowed(subtree, scope.config.collectionKey);
+      let detail;
+      try { detail = await scope.client.getCollectionDetail(library, key); }
+      catch (error) {
+        if (!(error instanceof ZoteroError && error.code === "HTTP_ERROR" && error.status === 404)) throw error;
+        await this.unchanged(scope);
+        return { library, collectionKey: key, status: "already-deleted" as const, deletedCollectionKeys: [key], verified: true as const, projectFilesChanged: false as const, sourcesDeleted: false as const };
+      }
+      if (detail.version !== expectedVersion || detail.serverId !== scope.config.serverId) throw new ZoteroError("CONFLICT", "The collection changed. Read zotero_get_collection again.");
+      if (!collections.some((entry) => entry.key === key)) throw new ZoteroError("INVALID_RESPONSE", "The target collection is missing from the hierarchy. Review it in Zotero.");
+      if (subtree.length > 1 && !includeDescendants) throw new Error("This collection has subcollections. Review their keys and explicitly request includeDescendants=true before deletion.");
+      const versions = new Map<string, number>([[key, detail.version]]);
+      for (const child of subtree.filter((entry) => entry !== key)) versions.set(child, (await scope.client.getCollectionDetail(library, child)).version);
+      const hierarchy = (values: typeof collections) => JSON.stringify(values.filter((entry) => subtree.includes(entry.key)).sort((a, b) => a.key.localeCompare(b.key)));
+      const original = hierarchy(collections);
+      const writer = new ZoteroWriter({ ...this.options, serverId: scope.config.serverId }, this.secrets);
+      await writer.deleteCollection(detail, async () => {
+        await this.unchanged(scope); scope.client.clearCache(); await scope.client.checkConnection();
+        const current = await scope.client.listAllCollections(library);
+        if (scope.config.collectionKey && !current.some((entry) => entry.key === scope.config.collectionKey)) {
+          throw new ZoteroError("CONFLICT", "The assigned collection changed or disappeared before deletion. Review it again.");
+        }
+        const latestSubtree = collectionSubtree(current, key);
+        assertCollectionDeletionAllowed(latestSubtree, scope.config.collectionKey);
+        if (JSON.stringify(latestSubtree) !== JSON.stringify(subtree) || hierarchy(current) !== original) throw new ZoteroError("CONFLICT", "The collection hierarchy changed before deletion. Review it again.");
+        for (const affected of subtree) {
+          const latest = await scope.client.getCollectionDetail(library, affected);
+          if (latest.version !== versions.get(affected) || latest.serverId !== scope.config.serverId) throw new ZoteroError("CONFLICT", "A collection changed before deletion. Read it again.");
+        }
+        await this.unchanged(scope);
+      });
+      scope.client.clearCache();
+      for (const affected of subtree) {
+        try { await scope.client.getCollectionDetail(library, affected); }
+        catch (error) { if (error instanceof ZoteroError && error.code === "HTTP_ERROR" && error.status === 404) continue; throw error; }
+        throw new ZoteroError("INVALID_RESPONSE", "The collection deletion could not be verified. Inspect Zotero before retrying.");
+      }
+      return { library, collectionKey: key, status: "deleted" as const, deletedCollectionKeys: [...subtree], verified: true as const, projectFilesChanged: false as const, sourcesDeleted: false as const };
+    });
   }
 
   async search(query: string, limit: number, offset: number): Promise<unknown> {
     const { config, client, library } = await this.scope();
     const items = (await client.searchItems(library, config.collectionKey || undefined, query)).filter(isImportableItem);
     return { library, collectionKey: config.collectionKey, total: items.length, offset, items: items.slice(offset, offset + limit) };
+  }
+
+  async research(query: string, external: "if-missing" | "always" | "never" = "if-missing", limit = 5) {
+    query = query.trim();
+    if (!query || query.length > 500 || !Number.isInteger(limit) || limit < 1 || limit > 10) throw new Error("Supply a query and a limit from 1 to 10.");
+    const scope = await this.scope();
+    let identifier: ReturnType<typeof normalizeIdentifier> | undefined;
+    try { identifier = normalizeIdentifier(query); } catch { /* A publication title is also a valid query. */ }
+    const existing = (await scope.client.searchItems(scope.library, scope.config.collectionKey || undefined, identifier?.value ?? query)).filter(isImportableItem);
+    const bib = scope.config.bibFile ? await readProjectText(this.root, scope.config.bibFile) ?? "" : "";
+    const terms = (identifier?.value ?? query).toLowerCase().split(/\s+/);
+    const bibliographyMatches = bibliographyRecords(bib).filter((record) => {
+      const text = [record.key, ...[...record.fields.values()].map((field) => field.value ?? "")].join(" ").toLowerCase();
+      return terms.every((term) => text.includes(term));
+    }).map((record) => ({ citationKey: record.key, title: record.fields.get("title")?.value ?? "" }));
+    const externalSearched = external === "always" || (external === "if-missing" && !existing.length && !bibliographyMatches.length);
+    const candidates: Awaited<ReturnType<ZoteroProjectService["lookupIdentifier"]>>[] = [];
+    const failures: { identifier: string; message: string }[] = [];
+    if (externalSearched) {
+      const identifiers = identifier ? [identifier.value] : [...new Set((await new CrossrefClient(this.options.fetch ?? globalThis.fetch).search(query)).map((candidate) => candidate.doi))].slice(0, limit);
+      for (const value of identifiers) {
+        try { candidates.push(await this.resolveIdentifier(scope, value)); }
+        catch (error) { failures.push({ identifier: value, message: error instanceof Error ? error.message : "Identifier verification failed." }); }
+      }
+    }
+    await this.unchanged(scope);
+    return { library: scope.library, collectionKey: scope.config.collectionKey, existingTotal: existing.length, existing: existing.slice(0, limit),
+      bibliographyMatches: bibliographyMatches.slice(0, limit), externalSearched, candidates, failures,
+      verification: "identifier-metadata" as const, contentVerified: false as const,
+      guidance: "Reuse suitable existing sources. Provider verification confirms identifier metadata only; inspect the publication before supporting scientific claims. Search and verification do not create sources or import bibliography entries. After citing, sync saved LaTeX citations to the project .bib." };
+  }
+
+  async syncBibliography(backend: "native" | "better-biblatex" = "better-biblatex", dryRun = false) {
+    return this.writeLock(async () => {
+      const scope = await this.scope();
+      return syncCitedBibliography(this.root, scope.config, scope.snapshot, scope.client, this.options, backend, dryRun, () => this.unchanged(scope));
+    });
+  }
+
+  async listNotes(library: LibraryRef, itemKey: string) {
+    const scope = await this.scope();
+    const parent = await this.detail(scope, library, itemKey);
+    if (isTrashedData(parent.data)) throw new Error("The source is in Zotero trash.");
+    const notes = await scope.client.listItemNotes(library, itemKey);
+    await this.unchanged(scope);
+    return { library, itemKey, notes: notes.map(({ note: _note, ...summary }) => summary) };
+  }
+
+  private async noteDetail(scope: Scope, library: LibraryRef, itemKey: string, noteKey: string) {
+    const parent = await this.detail(scope, library, itemKey);
+    if (isTrashedData(parent.data)) throw new Error("The source is in Zotero trash.");
+    const detail = await scope.client.getItem(library, validateKey(noteKey));
+    sourceNote(detail, itemKey);
+    return detail;
+  }
+
+  async getNote(library: LibraryRef, itemKey: string, noteKey: string) {
+    const scope = await this.scope();
+    const note = sourceNote(await this.noteDetail(scope, library, itemKey, noteKey), itemKey);
+    await this.unchanged(scope);
+    return { library, itemKey, ...note };
+  }
+
+  async createNote(library: LibraryRef, itemKey: string, content: string, format: "text" | "html", requestId: string, expectedVersion: number) {
+    return this.writeLock(async () => {
+      const scope = await this.scope(true);
+      this.assertLibrary(library, scope.library);
+      return createSourceNote({ root: this.root, client: scope.client, serverId: scope.config.serverId!,
+        writer: new ZoteroWriter({ ...this.options, serverId: scope.config.serverId! }, this.secrets),
+        parent: () => this.detail(scope, library, itemKey), checkProject: () => this.unchanged(scope) }, content, format, requestId, expectedVersion);
+    });
+  }
+
+  async updateNote(library: LibraryRef, itemKey: string, noteKey: string, expectedVersion: number, content: string, format: "text" | "html") {
+    return this.writeLock(async () => {
+      const scope = await this.scope(true);
+      const note = noteContent(content, format);
+      const detail = await this.noteDetail(scope, library, itemKey, noteKey);
+      if (detail.version !== expectedVersion || detail.serverId !== scope.config.serverId) throw new ZoteroError("CONFLICT", "The note changed. Read its content and version again.");
+      if (detail.data.note === note) return { library, itemKey, ...sourceNote(detail, itemKey), status: "unchanged" as const, verified: true as const };
+      const writer = new ZoteroWriter({ ...this.options, serverId: scope.config.serverId! }, this.secrets);
+      await writer.updateItem(detail, { note }, async () => {
+        await this.unchanged(scope);
+        scope.client.clearCache();
+        const latest = await this.noteDetail(scope, library, itemKey, noteKey);
+        if (latest.version !== expectedVersion || latest.serverId !== scope.config.serverId) throw new ZoteroError("CONFLICT", "The note changed before writing. Read it again.");
+        await this.unchanged(scope);
+      });
+      scope.client.clearCache();
+      const saved = await this.noteDetail(scope, library, itemKey, noteKey);
+      if (saved.data.note !== note || saved.serverId !== scope.config.serverId) throw new Error("The saved note could not be verified. Read it before retrying.");
+      return { library, itemKey, ...sourceNote(saved, itemKey), status: "updated" as const, verified: true as const };
+    });
+  }
+
+  async listTrash(limit: number, offset: number) {
+    const scope = await this.scope();
+    const items = (await scope.client.listTrash(scope.library)).filter((detail) => isImportableItem(detail.item) && !detail.data.parentItem
+      && (!scope.config.collectionKey || itemCollections(detail.data).includes(scope.config.collectionKey)));
+    await this.unchanged(scope);
+    return { library: scope.library, collectionKey: scope.config.collectionKey, total: items.length, offset,
+      items: items.slice(offset, offset + limit).map(({ item, version, data }) => ({ item, version, collectionKeys: itemCollections(data) })) };
+  }
+
+  async restore(library: LibraryRef, key: string, expectedVersion: number) {
+    return this.writeLock(async () => {
+      const scope = await this.scope(true);
+      const detail = await this.detail(scope, library, key);
+      const trashed = isTrashedData(detail.data);
+      if (!trashed && !await scope.client.isItemTrashed(library, key)) {
+        return { ...detail, status: "already-restored" as const, verified: true as const, projectFilesChanged: false as const };
+      }
+      if (!trashed || detail.version !== expectedVersion || detail.serverId !== scope.config.serverId
+        || !await scope.client.isItemTrashed(library, key)) throw new ZoteroError("CONFLICT", "The trash state or source version changed. Read the trash entry again.");
+      const writer = new ZoteroWriter({ ...this.options, serverId: scope.config.serverId! }, this.secrets);
+      const saved = await writer.restoreItem(detail, async () => {
+        await this.unchanged(scope);
+        scope.client.clearCache();
+        await scope.client.checkConnection();
+        await scope.client.getCollection(library, scope.config.collectionKey);
+        const latest = await this.detail(scope, library, key);
+        if (latest.version !== expectedVersion || latest.serverId !== scope.config.serverId || !isTrashedData(latest.data)
+          || !await scope.client.isItemTrashed(library, key)) throw new ZoteroError("CONFLICT", "The trashed source changed before restoring. Review it again.");
+        await this.unchanged(scope);
+      });
+      if (!itemCollections(saved.data).includes(scope.config.collectionKey)) throw new Error("Restored source left the project collection; inspect Zotero.");
+      return { ...saved, status: "restored" as const, verified: true as const, projectFilesChanged: false as const };
+    });
   }
 
   private assertLibrary(actual: LibraryRef, expected: LibraryRef): void {
@@ -305,12 +522,7 @@ export class ZoteroProjectService {
   }
 
   private async writeLock<T>(action: () => Promise<T>): Promise<T> {
-    const lock = await projectPath(this.root, ".zotero/mcp/write.lock");
-    await mkdir(path.dirname(lock), { recursive: true });
-    await projectPath(this.root, ".zotero/mcp/write.lock");
-    try { await mkdir(lock); }
-    catch { throw new ZoteroError("BUSY", "Another MCP write is active. After a crashed process, remove .zotero/mcp/write.lock only once all Zotero MCP processes have stopped."); }
-    try { return await action(); } finally { await rm(lock, { recursive: true, force: true }); }
+    return withProjectWriteLock(this.root, action);
   }
 
   async create(input: SourceMetadata, requestId: string, allowPossibleDuplicate: boolean): Promise<unknown> {

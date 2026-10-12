@@ -12,6 +12,8 @@ import { CONFIG_FILE, newProjectConfig, readProjectConfig, readProjectText, save
 const mock = String.raw`
 const h={"Zotero-API-Version":"3","Zotero-Server-ID":"db-A"};
 let saved;
+let savedNote;
+const collections=new Map([["COLL2345",{key:"COLL2345",version:1,data:{name:"Fixture",parentCollection:false}}]]);
 let addedAttachment, uploadedBytes;
 let rejectedSourceKey, rejectedPdfKey;
 const uploadKey="U".repeat(32);
@@ -30,8 +32,16 @@ globalThis.fetch=async(input,init)=>{
  const item=()=>({key:saved.key,version:saved.version,data:saved});
  if(p==="/api/") return new Response("",{headers:h});
  if(p==="/api/users/0/groups") return json([]);
- if(p==="/api/users/0/collections/COLL2345") return json({key:"COLL2345",data:{name:"Fixture",parentCollection:false}});
- if(p==="/api/users/0/collections") return json([{key:"COLL2345",data:{name:"Fixture",parentCollection:false}}]);
+ if(init?.method==="POST" && p==="/api/users/0/collections"){
+   const data=JSON.parse(init.body)[0];const collection={key:data.key,version:1,data};collections.set(data.key,collection);
+   return json({successful:{0:collection},failed:{},unchanged:{}});
+ }
+ if(p==="/api/users/0/collections") return json([...collections.values()]);
+ if(p.startsWith("/api/users/0/collections/") && !p.endsWith("/top")){
+   const key=p.split("/").at(-1);
+   if(init?.method==="DELETE"){collections.delete(key);return new Response(null,{status:204,headers:h});}
+   return json(collections.get(key)||{},collections.has(key)?200:404);
+ }
  if(p==="/api/itemTypeFields"){
    const type=u.searchParams.get("itemType");
    return json(["title","date","url","extra",...(type==="thesis"?["university"]:type==="report"?["institution"]:["DOI","publisher"])].map(field=>({field})));
@@ -51,6 +61,9 @@ globalThis.fetch=async(input,init)=>{
  }
  if(init?.method==="POST"){
    const data=JSON.parse(init.body)[0];
+   if(data.itemType==="note"){
+     savedNote={key:data.key,version:1,data};return json({successful:{0:savedNote},failed:{},unchanged:{}});
+   }
    if(data.itemType==="attachment"){
      if(!rejectedPdfKey){rejectedPdfKey=data.key;return json({},403);}
      require("node:assert/strict").equal(data.key,rejectedPdfKey);
@@ -62,15 +75,26 @@ globalThis.fetch=async(input,init)=>{
    }
    saved=data;saved.version=11;return json({successful:{0:item()},failed:{},unchanged:{}});
  }
- if(init?.method==="PATCH"){Object.assign(saved,JSON.parse(init.body));if(saved.deleted===1)saved.deleted=true;saved.version++;return new Response(null,{status:204,headers:h});}
- if(p.endsWith("/children")) {attachment.data.parentItem=saved.key; return json([attachment,...addedAttachment?[addedAttachment]:[]]);}
+ if(init?.method==="PATCH"){
+   if(savedNote && p.endsWith("/"+savedNote.key)){Object.assign(savedNote.data,JSON.parse(init.body));savedNote.version++;}
+   else {Object.assign(saved,JSON.parse(init.body));if(saved.deleted===1)saved.deleted=true;saved.version++;}
+   return new Response(null,{status:204,headers:h});
+ }
+ if(p.endsWith("/children")) {
+   if(u.searchParams.get("itemType")==="note")return json(savedNote?[savedNote]:[]);
+   attachment.data.parentItem=saved.key; return json([attachment,...addedAttachment?[addedAttachment]:[]]);
+ }
+ if(savedNote && p.endsWith("/"+savedNote.key))return json(savedNote);
  if(addedAttachment && p.endsWith("/"+addedAttachment.key+"/file/view/url")) return new Response(require("node:url").pathToFileURL(process.env.MCP_STORED_PDF).href,{headers:h});
  if(addedAttachment && p.endsWith("/"+addedAttachment.key)) return json(addedAttachment);
  if(p.endsWith("/PDF12345/file/view/url")) return new Response(require("node:url").pathToFileURL(process.env.MCP_FIXTURE_PDF).href,{headers:h});
  if(p.endsWith("/PDF12345")) {attachment.data.parentItem=saved.key; return json(attachment);}
  if(p.endsWith("/trash")) return json(saved?.deleted===true?[item()]:[]);
- if(saved && p.endsWith("/"+saved.key)) return json(item());
- if(p.endsWith("/top") || p==="/api/users/0/items") return json(saved && !saved.deleted?[item()]:[]);
+ if(saved && p.endsWith("/"+saved.key)) {
+   if(u.searchParams.get("format")==="biblatex")return new Response("@book{provider,title={Protocol book}}",{headers:h});
+   return json(item());
+ }
+ if(p.endsWith("/top") || p==="/api/users/0/items") return json(saved && !saved.deleted && (!p.includes("/collections/") || saved.collections.includes(p.split("/").at(-3)))?[item()]:[]);
  return json({},404);
 };
 `;
@@ -95,10 +119,10 @@ test("official MCP client exercises local tools and identifier tools over real b
     throw new Error(diagnostics || (error instanceof Error ? error.message : "No diagnostics captured"), { cause: error });
   }
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 16);
+  assert.equal(tools.length, 28);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object"); assert.equal(tool.outputSchema?.type, "object");
-    assert.equal(tool.annotations?.openWorldHint, ["zotero_lookup_identifier", "zotero_import_identifier"].includes(tool.name));
+    assert.equal(tool.annotations?.openWorldHint, ["zotero_lookup_identifier", "zotero_import_identifier", "zotero_research"].includes(tool.name));
   }
   assert.equal(tools.find((tool) => tool.name === "zotero_delete_item")!.annotations!.destructiveHint, true);
   const call = async (name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
@@ -159,6 +183,20 @@ test("official MCP client exercises local tools and identifier tools over real b
   assert.match((collision.structuredContent as { error: { message: string } }).error.message, /already in use/);
   const unchangedKey = await call("zotero_get_metadata", { library: item.library, itemKey: item.key });
   assert.equal(unchangedKey.version, 13); assert.equal((unchangedKey.item as { citationKey: string }).citationKey, "LegacyExplicit2026");
+  const research = await call("zotero_research", { query: "protocol" });
+  assert.equal(research.externalSearched, false); assert.equal(research.contentVerified, false);
+  const noteArgs = { library: item.library, itemKey: item.key, content: "Summary & own thoughts", requestId: "stdio-note-request", expectedVersion: 13 };
+  const createdNote = await call("zotero_create_note", noteArgs);
+  assert.equal(createdNote.status, "created"); assert.equal(createdNote.note, "<p>Summary &amp; own thoughts</p>");
+  assert.equal((await call("zotero_create_note", noteArgs)).status, "already-created");
+  assert.equal((await call("zotero_list_notes", { library: item.library, itemKey: item.key })).notes instanceof Array, true);
+  assert.equal((await call("zotero_get_note", { library: item.library, itemKey: item.key, noteKey: createdNote.key })).version, 1);
+  assert.equal((await call("zotero_update_note", { library: item.library, itemKey: item.key, noteKey: createdNote.key, expectedVersion: 1, content: "Revised summary" })).status, "updated");
+  await writeFile(path.join(root, "main.tex"), "\\parencite{LegacyExplicit2026}\n% \\cite{NotCited}\n");
+  const bibPreview = await call("zotero_sync_bibliography", { dryRun: true });
+  assert.deepEqual(bibPreview.citedKeys, ["LegacyExplicit2026"]);
+  assert.equal((await call("zotero_sync_bibliography", { exporter: "native" })).status, "imported");
+  assert.match((await readProjectText(root, "refs.bib"))!, /@book\{LegacyExplicit2026/);
   const attachments = await call("zotero_list_attachments", { library: item.library, itemKey: item.key });
   assert.equal((attachments.attachments as unknown[]).length, 1);
   const file = await call("zotero_get_attachment", { library: item.library, itemKey: item.key, attachmentKey: "PDF12345" });
@@ -180,6 +218,10 @@ test("official MCP client exercises local tools and identifier tools over real b
   assert.equal((await call("zotero_attach_pdf", { library: item.library, itemKey: item.key, filePath: uploadPath, expectedVersion: 13, requestId: "stdio-pdf-request" })).status, "already-attached");
   assert.equal((await call("zotero_delete_item", { library: item.library, itemKey: item.key, expectedVersion: 13 })).status, "trashed");
   assert.equal((await call("zotero_delete_item", { library: item.library, itemKey: item.key, expectedVersion: 11 })).status, "already-trashed");
+  const trash = await call("zotero_list_trash");
+  const trashItem = (trash.items as { version: number }[])[0]!;
+  assert.equal((await call("zotero_restore_item", { library: item.library, itemKey: item.key, expectedVersion: trashItem.version })).status, "restored");
+  assert.equal((await call("zotero_restore_item", { library: item.library, itemKey: item.key, expectedVersion: trashItem.version })).status, "already-restored");
   const foreign = await client.callTool({ name: "zotero_get_metadata", arguments: { library: { type: "group", id: 42 }, itemKey: item.key } });
   assert.equal(foreign.isError, true);
   const invalid = await client.callTool({ name: "zotero_delete_item", arguments: { itemKey: "ambiguous" } });
@@ -194,5 +236,22 @@ test("official MCP client exercises local tools and identifier tools over real b
   assert.deepEqual(importedReport.lookupWarnings, report.warnings);
   const reportRetry = await call("zotero_import_identifier", { identifier: "10.1234/stdio-report", requestId: "stdio-report-import" });
   assert.equal(reportRetry.status, "already-created"); assert.deepEqual(reportRetry.lookupWarnings, report.warnings);
+  const collectionCreated = await call("zotero_create_collection", { name: "New project collection", requestId: "stdio-collection-001" });
+  const createdCollection = collectionCreated.collection as { key: string };
+  assert.equal(collectionCreated.status, "created");
+  assert.equal((await call("zotero_create_collection", { name: "New project collection", requestId: "stdio-collection-001" })).status, "already-created");
+  const collectionInfo = await call("zotero_get_collection", { library: item.library, collectionKey: createdCollection.key });
+  assert.equal(collectionInfo.deletionBlocked, false);
+  const switchPreview = await call("zotero_set_project_collection", { library: item.library, collectionKey: createdCollection.key, dryRun: true });
+  assert.equal(switchPreview.status, "preview");
+  const switched = await call("zotero_set_project_collection", { library: item.library, collectionKey: createdCollection.key });
+  assert.equal(switched.status, "assigned"); assert.equal(switched.removedBibliographyCount, 2);
+  assert.equal((await readProjectConfig(root))!.collectionKey, createdCollection.key);
+  const protectedDelete = await client.callTool({ name: "zotero_delete_collection", arguments: { library: item.library, collectionKey: createdCollection.key, expectedVersion: 1 } });
+  assert.equal(protectedDelete.isError, true);
+  assert.equal((protectedDelete.structuredContent as { error: { code: string } }).error.code, "FORBIDDEN");
+  await call("zotero_set_project_collection", { library: item.library, collectionKey: "COLL2345" });
+  assert.equal((await call("zotero_delete_collection", { library: item.library, collectionKey: createdCollection.key, expectedVersion: 1 })).status, "deleted");
+  assert.equal((await call("zotero_delete_collection", { library: item.library, collectionKey: createdCollection.key, expectedVersion: 1 })).status, "already-deleted");
   assert.equal(diagnostics, "");
 });

@@ -4,7 +4,7 @@ import { bibEntries, managedBibliographyKeys, refreshBibliographyChecksum, synch
 import { bibliographyRecords } from "./fields";
 import { projectCitationKey } from "./keys";
 import { citationCommands, type MigrationSource } from "./migration";
-import { texArgument, texCode, type TexArgument } from "./texSyntax";
+import { texArgument, texCode, texCommandMatches, type TexArgument } from "./texSyntax";
 
 interface Edit { start: number; end: number; text: string }
 export interface CitationDeletionPlan {
@@ -35,7 +35,7 @@ function skipOptions(code: string, position: number, multiple: boolean): number 
 
 /** Remove whole invocations or selected literal keys, preserving notes on retained citations and quote bodies. */
 export function deleteTexCitations(text: string, declared: ReadonlyMap<string, boolean> = new Map(),
-  removedKeys?: ReadonlySet<string>): { text: string; count: number } {
+  removedKeys?: ReadonlySet<string>, onKeys?: (keys: readonly string[], command: string) => void): { text: string; count: number } {
   if (removedKeys && !removedKeys.size) return { text, count: 0 };
   const code = texCode(text);
   const edits: Edit[] = [];
@@ -95,6 +95,7 @@ export function deleteTexCitations(text: string, declared: ReadonlyMap<string, b
         throw new Error("Dynamic LaTeX citation keys cannot be matched to unchecked sources safely. Replace key macros with literal citation keys before updating the bibliography.");
       }
       const tokens = keys.content.match(/[^,\s]+/gu) ?? [];
+      onKeys?.(tokens, name);
       const kept = removedKeys ? tokens.filter((key) => !removedKeys.has(key)) : undefined;
       groups.push({ start: groupStart, end: keys.end, keys, ...(kept ? { kept } : {}), removed: kept ? tokens.length - kept.length : 1 });
       end = keys.end;
@@ -153,6 +154,42 @@ export function deleteTexCitations(text: string, declared: ReadonlyMap<string, b
   }
   if (openEnvironments.length) throw new Error("Unclosed citation quote environment. Fix it before deleting citations.");
   return { text: apply(text, edits), count };
+}
+
+/** Share the parser used for citation removal; definitions alone do not cite a source. */
+export function referencedCitationKeys(sources: readonly MigrationSource[]): readonly string[] {
+  const declared = new Map<string, boolean>();
+  for (const source of sources) for (const definition of texCommandMatches(texCode(source.text), /\\Declare(Multi)?CiteCommand\*?\s*\{\s*\\([a-zA-Z]+)\s*\}/g)) {
+    declared.set(definition[2]!, !!definition[1]);
+  }
+  const keys = new Set<string>();
+  for (const source of sources) {
+    const code = texCode(source.text);
+    // A literal citation inside a macro definition is not evidence that the macro is invoked.
+    for (const definition of texCommandMatches(code, /\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand|def|gdef|edef|xdef)\*?/g)) {
+      let position = definition.index! + definition[0].length;
+      const name = texArgument(code, position, "{", "}");
+      if (name) position = name.end;
+      else {
+        const token = /^\s*\\[a-zA-Z]+(?:#[1-9])*/.exec(code.slice(position));
+        if (!token) continue;
+        position += token[0].length;
+      }
+      let option;
+      while ((option = texArgument(code, position, "[", "]"))) position = option.end;
+      const body = texArgument(code, position, "{", "}");
+      if (!body) continue;
+      if (texCommandMatches(body.content, /\\([a-zA-Z]+)\*?/g).some((command) => citationCommands.has(command[1]!) || declared.has(command[1]!))) {
+        throw new Error("Citations in custom macro definitions cannot establish actual use. Resolve the wrapper to explicit citation commands before automatic import.");
+      }
+    }
+    deleteTexCitations(source.text, declared, new Set([""]), (tokens, command) => {
+    if (["defcitealias", "defbibentryset"].includes(command)) return;
+    if (tokens.includes("*")) throw new Error("Automatic bibliography import requires explicit citation keys; resolve nocite{*} first.");
+    tokens.forEach((key) => keys.add(key));
+    });
+  }
+  return [...keys];
 }
 
 /** Retained sources must no longer reference entries explicitly removed from the bibliography. */
