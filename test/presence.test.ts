@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bibliographyPresence } from "../src/biblatex/presence";
+import { bibliographyPresence, resolveBibliographyPresence } from "../src/biblatex/presence";
 import { parseItem } from "../src/zotero/items";
 import type { ProjectConfig, ZoteroItem } from "../src/shared/types";
 
@@ -37,6 +37,43 @@ test("Foreign libraries, notes, identical titles and ambiguous keys cannot produ
 
 test("Damaged bibliography reports an error instead of using the saved import list", () => {
   assert.throws(() => bibliographyPresence(config, [item("ITEM0001")], "@book{Mueller2024,title={Incomplete}"), /Incomplete/);
+});
+
+test("Resolving external keys preserves project mappings, offline sources and ambiguous-key protection", async () => {
+  const attemptedKeys = new Set<string>();
+  const sources = [
+    { ...item("ITEM0001"), citationKey: "Changed2025" },
+    { ...item("ITEM0003"), citationKey: "Pinned2024" },
+    item("ITEM0004"), item("ITEM0005"), item("ITEM0006"),
+    { ...item("ITEM0007"), itemType: "note" },
+    { ...item("ITEM0008"), library: { type: "group" as const, id: 42 } },
+  ];
+  const bibliography = ["Mueller2024", "Deleted2024", "Pinned2024", "External2024", "Ambiguous2024"]
+    .map((key) => `@book{${key},title={Source}}`).join("\n");
+  const lookedUp: string[][] = [];
+  const lookup = async (keys: readonly string[]) => {
+    lookedUp.push([...keys]);
+    return { ITEM0004: "External2024", ITEM0005: "Ambiguous2024", ITEM0006: "Ambiguous2024" };
+  };
+  const result = await resolveBibliographyPresence(config, sources, bibliography, { attemptedKeys, lookup });
+  assert.deepEqual(lookedUp, [["ITEM0004", "ITEM0005", "ITEM0006"]]);
+  assert.deepEqual(result.citationKeys, {
+    ITEM0001: "Mueller2024", ITEM0002: "Deleted2024", ITEM0003: "Pinned2024", ITEM0004: "External2024",
+  });
+  const repeated = await resolveBibliographyPresence(config, sources, bibliography,
+    { attemptedKeys, lookup, resolvedKeys: result.resolvedKeys });
+  assert.deepEqual(repeated, result);
+  assert.equal(lookedUp.length, 1);
+});
+
+test("Large groups sharing a citation key remain ambiguous without hiding unique sources", () => {
+  const sources = Array.from({ length: 5000 }, (_, index) => ({
+    ...item(String(index).padStart(8, "0")), citationKey: "SharedKey",
+  }));
+  sources.push({ ...item("UNIQUE01"), citationKey: "UniqueKey" });
+  const presence = bibliographyPresence({ ...config, importedItemKeys: [], citationKeys: {} }, sources,
+    "@book{SharedKey,title={Ambiguous}}\n@book{UniqueKey,title={Unique}}");
+  assert.deepEqual(presence, { itemKeys: ["UNIQUE01"], citationKeys: { UNIQUE01: "UniqueKey" } });
 });
 
 test("Pinned citation keys are read from Extra without rejecting unrelated or malformed metadata", () => {

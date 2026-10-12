@@ -210,9 +210,22 @@ test("Existing external entries are prechecked through local BBT and the full se
     const view = list(root, "External2024");
     await view.open();
     assert.equal(checked(view.panel.webview.html, "ITEM0003"), true);
-    await view.message({ type: "synchronize", keys: ["ITEM0003", "ITEM0002"] });
+    await view.message({ type: "synchronize", keys: ["ITEM0003", "ITEM0002", "ITEM0003"] });
     assert.deepEqual(view.imports, [["ITEM0003", "ITEM0002"]]);
     assert.equal(await readFile(path.join(root, "refs.bib"), "utf8"), text);
+  });
+});
+
+test("A selection containing an unknown source is rejected before synchronizing any source", async () => {
+  await inProject(async (root) => {
+    await saveProjectConfig(root, config);
+    const view = list(root);
+    await view.open();
+    await view.message({ type: "synchronize", keys: ["ITEM0001", "MISSING1", "ITEM0002"] });
+    assert.deepEqual(view.imports, []);
+    assert.deepEqual(view.errors, ["A selected source is no longer available. Refresh the list."]);
+    await view.message({ type: "synchronize", keys: ["ITEM0002", "ITEM0001"] });
+    assert.deepEqual(view.imports, [["ITEM0002", "ITEM0001"]]);
   });
 });
 

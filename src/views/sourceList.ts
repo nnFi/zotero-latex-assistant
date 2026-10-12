@@ -52,6 +52,7 @@ export function registerSourceList(context: vscode.ExtensionContext, projects: P
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] });
     panels.set(scopeId, { panel, serverId: databaseBinding.serverId });
     let items: readonly ZoteroItem[] = [];
+    let itemsByKey: ReadonlyMap<string, ZoteroItem> = new Map();
     let displayedAttachments: ReadonlyMap<string, readonly ZoteroAttachment[]> | undefined;
     let displayedAttachmentError = "";
     let busy = true;
@@ -113,6 +114,7 @@ export function registerSourceList(context: vscode.ExtensionContext, projects: P
       if (disposed) return;
       await readCurrent();
       items = loaded;
+      itemsByKey = new Map(loaded.map((item) => [item.key, item]));
       resolvedKeys = {};
       attemptedKeys.clear();
       displayedAttachments = attachments === undefined ? undefined : attachmentsByItem(attachments);
@@ -129,13 +131,13 @@ export function registerSourceList(context: vscode.ExtensionContext, projects: P
         if (message.type === "refresh") await load(true);
         if (message.type === "doi") await vscode.commands.executeCommand("zoteroLatexAssistant.searchDoi");
         if (message.type === "cite") {
-          const item = items.find((source) => source.key === message.key);
+          const item = typeof message.key === "string" ? itemsByKey.get(message.key) : undefined;
           if (!item) throw new Error("The source is no longer in the list. Refresh the list.");
           await citations.citeWithDetails([item], folder!, undefined, databaseBinding);
           await render();
         }
         if (message.type === "open") {
-          const item = items.find((source) => source.key === message.key);
+          const item = typeof message.key === "string" ? itemsByKey.get(message.key) : undefined;
           if (!item) throw new Error("The source is no longer in the list. Refresh the list.");
           await vscode.env.openExternal(vscode.Uri.parse(item.library.type === "user"
             ? `zotero://select/library/items/${validateKey(item.key)}`
@@ -147,7 +149,7 @@ export function registerSourceList(context: vscode.ExtensionContext, projects: P
           }
           const keys = [...new Set(message.keys as string[])];
           const selected = keys.map((key) => {
-            const item = items.find((source) => source.key === key);
+            const item = itemsByKey.get(key);
             if (!item) throw new Error("A selected source is no longer available. Refresh the list.");
             return item;
           });

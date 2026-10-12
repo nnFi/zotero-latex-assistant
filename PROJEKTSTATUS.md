@@ -970,3 +970,18 @@ Fehlerkorrektur der Projektsperre am 11. Oktober 2026:
   Tests prüfen verschachtelte/ausgeschlossene Dateien, TeX-Erkennung, Backups,
   stabile Projektdaten, Pfad-/Symlinkschutz, Syntaxfehler und gemeinsame Schreibsperre.
   Das aktualisierte VSIX wurde erfolgreich erzeugt.
+
+## Quellenlisten-Abgleich optimiert (12. Oktober 2026)
+
+- Bibliografie pro Abgleich einmal parsen und die Schlüssel auch nach einer
+  Better-BibTeX-Abfrage wiederverwenden. Importierte und vorhandene Quellen
+  über Sets prüfen; mehrdeutige Schlüssel über Zähler erkennen.
+- Quellenliste baut nach jedem Laden einen Schlüsselindex auf. Zitationen,
+  Öffnen und Auswahlabgleich nutzen ihn statt wiederholter Listensuchen.
+- Lokaler Vergleich mit 10.000 Quellen, Median aus fünf Durchläufen nach
+  Aufwärmen: Bibliografieabgleich 70 → 17 ms; Prüfung eines gemeinsamen
+  Schlüssels 82 → 9 ms. Gemessen wurde der Abgleich, nicht die gesamte UI.
+- Build, beide TypeScript-Projekte und alle 498 Tests bestanden. Zusätzliche
+  Fälle prüfen externe/offline Quellen, stabile und mehrdeutige Schlüssel,
+  wiederholte Auflösung sowie unbekannte und doppelte Auswahlschlüssel.
+  Keine persönlichen Zotero-Daten verändert; kein neues VSIX erstellt.
