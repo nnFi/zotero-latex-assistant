@@ -111,8 +111,11 @@ unterstützt. Bei vorhandenen Dateien andere Servereinträge erhalten.
 
 Codex hat eigene MCP-Einstellungen. Unsere installierte Zotero-Erweiterung bietet
 **Zotero: Set up Codex MCP connection** in der Befehlspalette und im Zahnradmenü
-der Zotero-Seitenleiste. Dieser vorhandene Befehl richtet den Server für den
-ausgewählten Projektordner ein.
+der Zotero-Seitenleiste. Nach dem Aufruf **die gewünschte `.cjs`-Serverdatei selbst
+auswählen**. Es wird kein Pfad vorbelegt oder aus der Erweiterungsinstallation
+automatisch übernommen. Danach richtet der Befehl die Verbindung für den
+ausgewählten Projektordner ein. Bei Abbruch bleibt die Konfiguration unverändert.
+Dasselbe gilt für **Set up Claude MCP connection** und **Set up Cursor MCP connection**.
 
 Für die manuelle, projektübergreifende Einrichtung folgenden Abschnitt in
 `/home/finn/.codex/config.toml` ergänzen bzw. einen gleichnamigen Abschnitt aktualisieren:
@@ -131,6 +134,26 @@ Die Copilot-Konfiguration allein richtet Codex nicht ein.
 [OpenAI Docs zur Codex-MCP-Einrichtung](https://developers.openai.com/codex/mcp).
 
 ## Cursor
+
+### Über die Zotero-Erweiterung (ab Version 0.5.0)
+
+1. Das Schreibprojekt in Cursor öffnen und die Zotero-Erweiterung installieren.
+2. **Strg+Umschalt+P → Zotero: Set up Cursor MCP connection** aufrufen.
+   Alternativ im Zahnradmenü der Zotero-Seitenleiste auswählen.
+3. Im Dateidialog **die gewünschte `.cjs`-Serverdatei ausdrücklich selbst auswählen**.
+   Du kannst etwa die oben genannte `dist/mcp/server.cjs` oder eine eigene Kopie
+   verwenden. Ein automatischer Pfad zur gebündelten Datei wird nicht eingetragen.
+4. Die Erweiterung prüft die Datei, schreibt `.cursor/mcp.json` **in diesem Projekt**
+   und öffnet die fertige Konfiguration. Andere Server bleiben erhalten.
+5. Den Server in Cursors MCP-Einstellungen aktivieren bzw. neu starten und im
+   lokalen Agent-Chat die Verbindung wie unten beschrieben testen.
+
+Die Verbindung enthält den ausgewählten Serverpfad und den absoluten Pfad des
+gewählten Schreibprojekts. Keine globale Cursor-Konfiguration wird verändert.
+Bei Abbruch der Dateiauswahl wird nichts eingetragen. Eine bereits geöffnete,
+ungespeicherte MCP-Konfiguration zuerst speichern.
+
+### Manuelle Einrichtung ohne Erweiterungsbefehl
 
 Die MCP-Verwaltung unter **Customize / MCP** öffnen und den Server als lokalen
 **STDIO-/Command-Server** mit den Angaben aus der Tabelle hinzufügen.

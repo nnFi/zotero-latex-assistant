@@ -1,3 +1,4 @@
+import { APP_VERSION } from "../shared/version";
 import { isRecord } from "../zotero/validation";
 
 export interface DoiResult {
@@ -37,7 +38,7 @@ export class CrossrefClient {
     if (!isDoi) { url.searchParams.set("query.bibliographic", trimmed); url.searchParams.set("rows", "10"); }
     let response: Response;
     try {
-      response = await this.fetch(url, { headers: { Accept: "application/json", "User-Agent": "ZoteroLaTeXAssistant/0.1" },
+      response = await this.fetch(url, { headers: { Accept: "application/json", "User-Agent": `ZoteroLaTeXAssistant/${APP_VERSION}` },
         signal: AbortSignal.timeout(15000), redirect: "error" });
     } catch { throw new Error("Crossref is unavailable or the request timed out."); }
     if (!response.ok) {

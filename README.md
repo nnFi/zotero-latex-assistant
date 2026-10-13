@@ -53,7 +53,7 @@ für dein LaTeX-Dokument eine TeX-Installation mit BibLaTeX.
 
 1. In VS Code die Erweiterungsansicht öffnen (**Strg+Umschalt+X**).
    Im Menü **… → Install from VSIX…** die Datei
-   `zotero-latex-assistant-0.1.0.vsix` auswählen.
+   `zotero-latex-assistant-0.5.0.vsix` auswählen.
 2. Zotero starten. Unter **Einstellungen → Erweitert** die Kommunikation mit
    anderen Anwendungen auf diesem Computer erlauben.
 3. Deinen LaTeX-Projektordner in VS Code öffnen und links auf das
@@ -117,9 +117,12 @@ Fehlt die Quelle in deiner `.bib`, wird sie beim Zitieren übernommen.
 
 ### KI-Unterstützung einrichten · optional
 
-Im Zahnradmenü **Set up Codex MCP connection** oder
-**Set up Claude MCP connection** wählen. Für den lokalen MCP-Server brauchst
-du zusätzlich **Node.js ab Version 20** und die jeweilige KI-Erweiterung.
+Im Zahnradmenü **Set up Codex MCP connection**, **Set up Claude MCP connection**
+oder **Set up Cursor MCP connection** wählen. Danach die gewünschte **`.cjs`-Serverdatei
+selbst auswählen**. Diese Dateiauswahl ist für alle drei Einrichtungsbefehle
+verpflichtend; die Erweiterung setzt keinen gebündelten Serverpfad automatisch ein.
+Für den lokalen MCP-Server brauchst du zusätzlich **Node.js ab Version 20**.
+Cursor erhält die Verbindung im Projekt unter `.cursor/mcp.json`.
 
 Der Agent kann unter anderem Quellen recherchieren, Notizen bearbeiten,
 Literatur über DOI oder ISBN übernehmen und PDFs erhalten. Mit
@@ -158,8 +161,10 @@ Alle Zotero-Befehle findest du in der Befehlspalette (**Strg+Umschalt+P**).
 
 ## Updates
 
-### Version 0.1.0 · aktueller Entwicklungsstand
+### Version 0.5.0 · aktueller Entwicklungsstand
 
+- **MCP-Einrichtung:** Cursor-Verbindung im Projekt; Serverdatei bei Cursor,
+  Codex und Claude ausdrücklich auswählen, mit Prüfung und Abbruch ohne Änderungen.
 - **Flexible Einrichtung:** Bibliothek, Bib-Datei und Zitierstil separat
   auswählen; beim Bib-Dateiwechsel werden die LaTeX-Verweise angepasst.
 - **Zitieren und Quellen synchronisieren:** Direkter Import beim Zitieren,

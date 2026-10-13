@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { parse as parseToml } from "smol-toml";
 import { CONFIG_FILE, newProjectConfig, readProjectConfig, saveProjectConfig } from "../src/config/project";
 import { withProjectWriteLock } from "../src/config/projectLock";
 
@@ -34,13 +35,19 @@ test("packaged extension renders its source list and applies styles only to acti
   const commands = new Map<string, () => Promise<void>>();
   const errors: string[] = [];
   const panels: { disposed: boolean; webview: { html: string }; dispose(): void }[] = [];
+  const selectedServer = path.join(root, "manual server \"chosen\".cjs");
+  await writeFile(selectedServer, "// Explicitly chosen file; setup must not execute it.\n");
+  const mcpUi = { selection: selectedServer as string | undefined, scheme: "file", chooseCursorMenu: false,
+    dialogs: [] as { title: string; defaultUri?: unknown; canSelectFiles: boolean; canSelectFolders: boolean; canSelectMany: boolean }[],
+    opened: [] as string[], menus: [] as { label: string; command: string }[][] };
+  const textDocuments: { uri: ReturnType<typeof uri>; isDirty: boolean }[] = [];
   const fakeVscode = {
     Uri: { file: uri, joinPath: (base: { fsPath: string }, ...parts: string[]) => uri(path.join(base.fsPath, ...parts)) },
     TreeItem: class {}, EventEmitter: class { event = event; fire() {} dispose() {} },
     TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 }, ThemeIcon: class {}, RelativePattern: class {},
     StatusBarAlignment: { Left: 1 }, ViewColumn: { Active: 1 },
     workspace: {
-      workspaceFolders: [folder], textDocuments: [], getWorkspaceFolder: () => folder,
+      workspaceFolders: [folder], textDocuments, getWorkspaceFolder: () => folder,
       getConfiguration: () => ({ get: (_key: string, defaultValue: unknown) => defaultValue }),
       findFiles: async () => [uri(path.join(projectRoot, "main.tex"))],
       onDidChangeWorkspaceFolders: event, onDidCloseTextDocument: event, onDidChangeConfiguration: event,
@@ -51,14 +58,26 @@ test("packaged extension renders its source list and applies styles only to acti
       createOutputChannel: () => ({ appendLine() {}, dispose() {} }),
       createStatusBarItem: () => ({ show() {}, dispose() {} }), createTreeView: subscription,
       showErrorMessage: (message: string) => { errors.push(message); },
-      showQuickPick: async (entries: unknown[]) => entries[0], showInformationMessage() {},
+      showQuickPick: async (entries: { label: string; command?: string }[]) => {
+        if (entries.some((entry) => entry.command === "setupCursor")) {
+          mcpUi.menus.push(entries as { label: string; command: string }[]);
+          if (mcpUi.chooseCursorMenu) return entries.find((entry) => entry.command === "setupCursor");
+        }
+        return entries[0];
+      }, showInformationMessage() {},
+      showOpenDialog: async (options: typeof mcpUi.dialogs[number]) => {
+        mcpUi.dialogs.push(options);
+        return mcpUi.selection ? [{ ...uri(mcpUi.selection), scheme: mcpUi.scheme }] : undefined;
+      },
+      showTextDocument: async (file: ReturnType<typeof uri>) => { mcpUi.opened.push(file.fsPath); },
       createWebviewPanel: () => {
         const panel = { disposed: false, webview: { html: "", onDidReceiveMessage: event, postMessage: async () => true },
           onDidDispose: event, reveal() {}, dispose() { panel.disposed = true; } };
         panels.push(panel); return panel;
       },
     },
-    commands: { registerCommand: (name: string, callback: () => Promise<void>) => { commands.set(name, callback); return subscription(); } },
+    commands: { registerCommand: (name: string, callback: () => Promise<void>) => { commands.set(name, callback); return subscription(); },
+      executeCommand: async (name: string) => commands.get(name)!() },
   };
   const localFetch: typeof globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -131,4 +150,53 @@ Text
     assert.match(errors[0]!, /Another MCP write or Zotero project action/);
   });
   assert.equal((await readProjectConfig(projectRoot))!.collectionKey, "");
+  errors.length = 0;
+
+  const manifest = JSON.parse(await readFile(path.resolve(__dirname, "../../package.json"), "utf8"));
+  assert.equal(manifest.version, "0.5.0");
+  assert(manifest.contributes.commands.some((entry: { command: string }) => entry.command === "zoteroLatexAssistant.setupCursor"));
+  const targets = { Codex: ".codex/config.toml", Claude: ".mcp.json", Cursor: ".cursor/mcp.json" };
+  for (const [client, file] of Object.entries(targets)) {
+    assert(commands.has(`zoteroLatexAssistant.setup${client}`));
+    await commands.get(`zoteroLatexAssistant.setup${client}`)!();
+    assert.deepEqual(errors, []);
+    const text = await readFile(path.join(projectRoot, file), "utf8");
+    const config = client === "Codex" ? parseToml(text).mcp_servers as Record<string, { args: string[] }> : JSON.parse(text).mcpServers;
+    assert.equal(config.zotero_latex_assistant.args[0], selectedServer);
+    assert.equal(config.zotero_latex_assistant.args[2], projectRoot);
+    const options = mcpUi.dialogs.at(-1)!;
+    assert.equal(options.defaultUri, undefined, "No bundled server path may be selected by default");
+    assert.equal(options.canSelectFiles, true); assert.equal(options.canSelectFolders, false); assert.equal(options.canSelectMany, false);
+    assert(options.title.includes(client)); assert(mcpUi.opened.includes(path.join(projectRoot, file)));
+  }
+  mcpUi.chooseCursorMenu = true;
+  await commands.get("zoteroLatexAssistant.configureProject")!();
+  assert(mcpUi.menus.at(-1)!.some((entry) => entry.command === "setupCursor"));
+  assert.deepEqual(errors, []);
+  mcpUi.chooseCursorMenu = false;
+  mcpUi.selection = undefined;
+  const opened = mcpUi.opened.length;
+  for (const [client, file] of Object.entries(targets)) {
+    const before = await readFile(path.join(projectRoot, file), "utf8");
+    await commands.get(`zoteroLatexAssistant.setup${client}`)!();
+    assert.equal(await readFile(path.join(projectRoot, file), "utf8"), before);
+  }
+  assert.equal(mcpUi.opened.length, opened); assert.deepEqual(errors, []);
+
+  const cursorBefore = await readFile(path.join(projectRoot, targets.Cursor), "utf8");
+  const invalid = path.join(root, "wrong.txt"); await writeFile(invalid, "");
+  const directory = path.join(root, "folder.cjs"); await mkdir(directory);
+  for (const choice of [invalid, directory, path.join(root, "missing.cjs")]) {
+    mcpUi.selection = choice;
+    await commands.get("zoteroLatexAssistant.setupCursor")!();
+    assert.equal(await readFile(path.join(projectRoot, targets.Cursor), "utf8"), cursorBefore);
+  }
+  assert.equal(errors.length, 3);
+  mcpUi.selection = selectedServer; mcpUi.scheme = "vscode-remote";
+  await commands.get("zoteroLatexAssistant.setupCursor")!();
+  assert.equal(errors.length, 4); mcpUi.scheme = "file";
+  textDocuments.push({ uri: uri(path.join(projectRoot, targets.Cursor)), isDirty: true });
+  await commands.get("zoteroLatexAssistant.setupCursor")!();
+  assert.equal(errors.length, 5); assert.match(errors.at(-1)!, /Save the open MCP configuration/);
+  assert.equal(await readFile(path.join(projectRoot, targets.Cursor), "utf8"), cursorBefore);
 });

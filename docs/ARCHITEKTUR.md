@@ -481,8 +481,11 @@ separate Editorbrücke.
 
 `src/config/mcp.ts` erstellt Client-Konfigurationen ohne VS Code.
 `src/views/mcpCommands.ts` verbindet diese mit Projektordnerauswahl und
-Extension-Installationspfad. Codex erhält projektbezogene `.codex/config.toml`,
-Claude Code `.mcp.json`. Beide starten denselben gebündelten stdio-Server mit
+verpflichtender manueller `.cjs`-Dateiauswahl für sämtliche Einrichtungsaktionen.
+Es gibt keine automatische Auswahl des Extension-Installationspfads. Die Datei
+wird auf lokale URI, Endung, Lesbarkeit und Dateityp geprüft; Abbruch schreibt nichts.
+Codex erhält projektbezogene `.codex/config.toml`, Claude Code `.mcp.json` und
+Cursor `.cursor/mcp.json`. Alle starten die ausdrücklich ausgewählte Serverdatei mit
 explizitem Projektpfad. Die Aktion registriert nicht ausschließlich einen
 VS-Code-MCP-Provider. Details, Quellen, Sicherheitsregeln und Prüfgrenzen:
 [MCP mit Codex und Claude](MCP.md).

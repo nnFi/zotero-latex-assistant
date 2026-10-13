@@ -1,3 +1,4 @@
+import { APP_VERSION } from "../shared/version";
 import { normalizeDoi } from "./crossref";
 import { normalizeIsbn } from "./isbn";
 import { isRecord } from "../zotero/validation";
@@ -92,7 +93,7 @@ export class IdentifierClient {
     let response: Response;
     let payload: unknown;
     try {
-      response = await this.fetch(url, { headers: { Accept: "application/json", "User-Agent": "ZoteroLaTeXAssistant/0.1" },
+      response = await this.fetch(url, { headers: { Accept: "application/json", "User-Agent": `ZoteroLaTeXAssistant/${APP_VERSION}` },
         signal: AbortSignal.timeout(15000), redirect: "error" });
       if (!response.ok) {
         await response.body?.cancel();

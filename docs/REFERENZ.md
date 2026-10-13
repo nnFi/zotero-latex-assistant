@@ -9,13 +9,15 @@ Klassische Literaturverwaltung und KI-Unterstützung über den lokalen MCP-Serve
 **Aktueller Stand:** Zotero-Seitenleiste mit Bibliotheken, hierarchischen Sammlungen,
 Projektzuordnung in `.zotero/config.json`, gezieltem BibLaTeX-Import,
 Quellenliste mit Mehrfachauswahl, Einfügen von LaTeX-Zitationen und DOI-/Titelsuche über Crossref.
-Der lokale MCP-Server bietet außerdem 29 Werkzeuge für Lesen, wissenschaftliche Recherche,
+Der lokale MCP-Server bietet außerdem 33 Werkzeuge für Lesen, wissenschaftliche Recherche,
 zitatabhängigen Bib-Import, Notizen, Dublettenprüfung, Quellenaktualisierung,
 bibliografische Neuanlage, Zotero-Papierkorb mit Wiederherstellung, Sammlungsverwaltung und PDF-Weitergabe
 an den Agenten. PDFs werden unverändert als Datei übergeben, ohne lokale Textextraktion.
-**Zotero: Set up Codex MCP connection** und **Zotero: Set up Claude MCP connection**
+**Zotero: Set up Codex MCP connection**, **Zotero: Set up Claude MCP connection**
+und **Zotero: Set up Cursor MCP connection**
 richten das aktuelle Projekt für die jeweiligen VS-Code-KI-Erweiterungen ein.
-Beide Aktionen sind auch über das Zahnrad in der Zotero-Seitenleiste auswählbar.
+Alle drei Aktionen sind auch über das Zahnrad in der Zotero-Seitenleiste auswählbar
+und verlangen eine manuelle Auswahl der gewünschten `.cjs`-Serverdatei.
 Einrichtung, Freigaben und tatsächlich geprüfte Ergebnisse: [MCP mit Codex und Claude](MCP.md).
 Die vollständige Aufgabenliste steht in [PROJEKTSTATUS.md](../PROJEKTSTATUS.md).
 

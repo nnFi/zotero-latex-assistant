@@ -3,7 +3,7 @@
   "displayName": "Zotero LaTeX Assistant",
   "description": "Local Zotero integration for academic writing with LaTeX in VS Code.",
   "icon": "media/icon.png",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "publisher": "local",
   "private": true,
   "type": "commonjs",
@@ -137,7 +137,7 @@
       },
       {
         "command": "zoteroLatexAssistant.insertCitation",
-        "title": "Cite \u2026",
+        "title": "Cite …",
         "category": "Zotero",
         "icon": "$(quote)"
       },
@@ -161,6 +161,11 @@
       {
         "command": "zoteroLatexAssistant.setupClaude",
         "title": "Set up Claude MCP connection",
+        "category": "Zotero"
+      },
+      {
+        "command": "zoteroLatexAssistant.setupCursor",
+        "title": "Set up Cursor MCP connection",
         "category": "Zotero"
       }
     ],

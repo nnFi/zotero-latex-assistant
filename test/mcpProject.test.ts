@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { newProjectConfig, saveProjectConfig, readProjectText, parseProjectConfig, CONFIG_FILE } from "../src/config/project";
 import { ZoteroProjectService } from "../src/zotero/projectService";
 import { metadataSchema, metadataUpdateSchema } from "../src/zotero/metadata";
-import { codexConfig, claudeConfig, mcpLaunch, configureMcp } from "../src/config/mcp";
+import { codexConfig, claudeConfig, cursorConfig, mcpLaunch, configureMcp } from "../src/config/mcp";
 import { ZoteroError } from "../src/shared/errors";
 import { parse } from "smol-toml";
 
@@ -511,7 +511,7 @@ test("cross-process project lock blocks concurrent writes", async (t) => {
   assert.equal(f.counts().writes, 1);
 });
 
-test("Codex and Claude configuration preserve unrelated servers, escaping and explicit scope", async (t) => {
+test("Codex, Claude and Cursor configuration preserve unrelated servers, escaping and explicit scope", async (t) => {
   const f = await fixture(t);
   const launch = mcpLaunch(f.root, path.join(f.root, 'server "quoted".cjs'), "node", "http://localhost:23119/api/", 5000);
   const before = '# preserve comment\n[mcp_servers.other]\ncommand = "other"\n';
@@ -527,6 +527,22 @@ test("Codex and Claude configuration preserve unrelated servers, escaping and ex
   assert.throws(() => claudeConfig('{"mcpServers":{"zotero_latex_assistant":{"command":"custom"}}}', launch), /unrelated/);
   assert.equal(await configureMcp(f.root, "codex", launch), ".codex/config.toml");
   assert.equal(await configureMcp(f.root, "claude", launch), ".mcp.json");
+  const cursor = JSON.parse(cursorConfig('{"mcpServers":{"other":{"command":"other"}},"extra":true}', launch));
+  assert.equal(cursor.mcpServers.other.command, "other"); assert.equal(cursor.extra, true);
+  assert.equal(cursor.mcpServers.zotero_latex_assistant.args[0], launch.args[0]);
+  assert.equal(cursor.mcpServers.zotero_latex_assistant.args[2], f.root);
+  const variable = JSON.stringify({ mcpServers: { zotero_latex_assistant: { type: "stdio", command: "node", args: ["old.cjs", "--project", "${workspaceFolder}"], env: { EXTRA: "keep" } } } });
+  const updated = JSON.parse(cursorConfig(variable, launch));
+  assert.equal(updated.mcpServers.zotero_latex_assistant.args[0], launch.args[0]);
+  assert.equal(updated.mcpServers.zotero_latex_assistant.env.EXTRA, "keep");
+  const standalone = JSON.stringify({ mcpServers: { zotero_latex_assistant: { type: "stdio", command: "node", args: [launch.args[0]], env: { EXTRA: "keep" } } } });
+  assert.equal(JSON.parse(cursorConfig(standalone, launch)).mcpServers.zotero_latex_assistant.args[2], f.root);
+  assert.equal(await configureMcp(f.root, "cursor", launch), ".cursor/mcp.json");
+  assert.deepEqual(JSON.parse((await readProjectText(f.root, ".cursor/mcp.json"))!), JSON.parse(cursorConfig(undefined, launch)));
+  for (const entry of [
+    { command: "other" }, { command: "node", args: [f.root, "--project", "/other/project"] },
+    { type: "http", url: "https://example.com", args: ["--project", f.root] },
+  ]) assert.throws(() => cursorConfig(JSON.stringify({ mcpServers: { zotero_latex_assistant: entry } }), launch), /unrelated/);
 });
 
 

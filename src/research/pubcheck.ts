@@ -1,3 +1,4 @@
+import { APP_VERSION } from "../shared/version";
 import type { ZoteroItemDetail } from "../shared/types";
 import { isRecord } from "../zotero/validation";
 import { normalizeDoi } from "./crossref";
@@ -60,7 +61,7 @@ function reference(detail: CitationSource) {
 export class PubcheckClient {
   constructor(private readonly fetch: typeof globalThis.fetch = globalThis.fetch) {}
   private async json(url: string, init: RequestInit = {}, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
-    const response = await this.fetch(url, { ...init, headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "ZoteroLaTeXAssistant/0.1" },
+    const response = await this.fetch(url, { ...init, headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": `ZoteroLaTeXAssistant/${APP_VERSION}` },
       signal: signal ?? AbortSignal.timeout(12000), redirect: "error" });
     if (!response.ok) {
       await response.body?.cancel();

@@ -308,6 +308,7 @@ export class ProjectController {
       { label: "Set library", command: "connectProject" },
       { label: "Set up Codex MCP connection", description: "Connect this project to Codex", command: "setupCodex" },
       { label: "Set up Claude MCP connection", description: "Connect this project to Claude Code", command: "setupClaude" },
+      { label: "Set up Cursor MCP connection", description: "Connect this project to Cursor", command: "setupCursor" },
       { label: "Set .bib file", command: "selectBibFile" },
       { label: "Change citation style", command: "selectCitationStyle" },
       { label: "Update .bib manually", command: "updateBib" },

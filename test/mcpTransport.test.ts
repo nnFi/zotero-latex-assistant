@@ -129,6 +129,7 @@ test("official MCP client exercises local tools and identifier tools over real b
     throw new Error(diagnostics || (error instanceof Error ? error.message : "No diagnostics captured"), { cause: error });
   }
   const { tools } = await client.listTools();
+  assert.equal(client.getServerVersion()?.version, "0.5.0");
   assert.equal(tools.length, 33);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object"); assert.equal(tool.outputSchema?.type, "object");

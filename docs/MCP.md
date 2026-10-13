@@ -468,6 +468,11 @@ Notizinhalt/Normalisierung und `deleted` folgen dem
 Die Einrichtungsaktionen stehen sowohl in der Befehlspalette als auch im
 Zahnrad-Menü der Zotero-Seitenleiste (**Configure project**):
 **Set up Codex MCP connection** und **Set up Claude MCP connection**.
+**Set up Cursor MCP connection** richtet Cursor im aktuellen Projekt ein.
+Alle drei Aktionen verlangen die ausdrückliche Auswahl einer vorhandenen,
+lesbaren lokalen `.cjs`-Serverdatei. Der Installationspfad des gebündelten Servers
+wird nicht automatisch übernommen oder im Dateidialog vorbelegt. Abbruch verändert
+keine Konfiguration. Offene, ungespeicherte MCP-Konfigurationen zuerst speichern.
 
 - Node.js 20 oder neuer auf derselben Maschine wie Zotero; bei Bedarf den absoluten
   Programmpfad in `zoteroLatexAssistant.nodePath` eintragen.
@@ -488,7 +493,7 @@ Zahnrad-Menü der Zotero-Seitenleiste (**Configure project**):
    gilt der aktive Editorordner oder die ausdrücklich gewählte Ordnerauswahl.
 2. Die Aktion schreibt einen markierten Serverabschnitt in **dieses Projekts**
    `.codex/config.toml`, erhält andere Server und öffnet die fertige Konfiguration.
-   Sie übergibt Extension-Serverpfad, Projektpfad, lokale API-URL und Zeitlimit als Argumente.
+   Sie übergibt den ausdrücklich ausgewählten Serverpfad, Projektpfad, lokale API-URL und Zeitlimit als Argumente.
 3. Das Projekt in Codex als vertrauenswürdig verwenden und die Codex-IDE-Sitzung
    neu starten. Zuerst bitten: „Rufe `zotero_get_selected_collection` auf und zeige
    Bibliothek und ausgewählte Sammlung.“ Erst bei passender Zuordnung schreiben.
@@ -508,8 +513,8 @@ startup_timeout_sec = 20
 tool_timeout_sec = 120
 ```
 
-Bei einem Extension-Update mit verändertem Installationspfad die Einrichtungsaktion
-erneut aufrufen. Der markierte Abschnitt wird ersetzt. Ein gleichnamiger, nicht
+Bei einem Wechsel der gewünschten Serverdatei die Einrichtungsaktion erneut aufrufen
+und die neue Datei selbst auswählen. Der markierte Abschnitt wird ersetzt. Ein gleichnamiger, nicht
 von der Aktion verwalteter Server wird zum Schutz vorhandener Einstellungen abgewiesen.
 Absolute lokale Pfade sind maschinenabhängig; die erzeugte Client-Konfiguration
 nicht ungeprüft mit anderen Rechnern teilen.
@@ -517,7 +522,7 @@ nicht ungeprüft mit anderen Rechnern teilen.
 ### Claude Code und Claude-Erweiterung in VS Code
 
 1. **Zotero: Set up Claude MCP connection** aufrufen.
-2. Die Aktion ergänzt den Server in der projektbezogenen `.mcp.json` und öffnet
+2. Die gewünschte `.cjs`-Serverdatei selbst auswählen. Die Aktion ergänzt den Server in der projektbezogenen `.mcp.json` und öffnet
    die Datei. Andere Server bleiben erhalten.
 3. Den Projektserver in Claude Code zulassen und über `/mcp` die Verbindung prüfen.
    Gegebenenfalls die IDE-Sitzung neu starten. Anschließend ebenfalls zuerst
@@ -544,6 +549,26 @@ Server starten. Für Claude Desktop den Servereintrag mit den tatsächlichen Pfa
 in dessen separate MCP-Konfiguration übernehmen. Diese manuelle Desktop-Einrichtung
 wurde hier nicht live geprüft. Ein Cloud-Client erreicht den lokalen stdio-Prozess
 nicht ohne zusätzliche Infrastruktur.
+
+### Cursor über die Erweiterung einrichten
+
+1. Das Schreibprojekt öffnen und **Zotero: Set up Cursor MCP connection** aufrufen,
+   über Befehlspalette oder Zahnradmenü der Zotero-Seitenleiste.
+2. Die gewünschte `.cjs`-Serverdatei selbst auswählen. Sie muss lokal, lesbar und
+   eine vorhandene Datei sein. Der Befehl verwendet keinen automatischen Serverpfad.
+3. Die Aktion ergänzt den Eintrag unter `mcpServers` in **`.cursor/mcp.json` dieses
+   Projekts** und öffnet die Konfiguration. Der Projektpfad wird als `--project`
+   übergeben; Node-Pfad, lokale API-URL und Timeout kommen aus den Einstellungen.
+4. Den Server in Cursors MCP-Einstellungen aktivieren bzw. neu starten und
+   `zotero_get_context` aufrufen. Falls die Bibliotheksbindung fehlt, sie per Chat
+   auswählen. Die globale Cursor-Konfiguration bleibt unangetastet.
+
+Andere Server und weitere Konfigurationsfelder bleiben erhalten. Ein gleichnamiger
+Eintrag für dasselbe Projekt kann aktualisiert werden, auch wenn sein Projektargument
+bisher `${workspaceFolder}` war. Fremde Projektbindungen und Remote-Server werden
+nicht überschrieben. Ein bisher eigenständiger Cursor-Eintrag kann dem Projekt
+zugeordnet werden, wenn er genau auf die jetzt ausdrücklich gewählte Serverdatei zeigt.
+Quelle: [Cursor-MCP-Dokumentation](https://cursor.com/docs/mcp).
 
 ## Werkzeuge und Ergebnisse
 

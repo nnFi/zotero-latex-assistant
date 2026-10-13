@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { ZoteroClient } from "../../src/zotero/client";
@@ -9,6 +9,7 @@ import { bibliographyRecords } from "../../src/biblatex/fields";
 import { newProjectConfig, readProjectConfig, saveProjectConfig } from "../../src/config/project";
 import { insertPreparedCitation } from "../../src/biblatex/citations";
 import { ZoteroError } from "../../src/shared/errors";
+import { configureMcp, mcpLaunch } from "../../src/config/mcp";
 
 /** Opt-in test in a real extension host. Only generated workspace files are written. */
 export async function run(): Promise<void> {
@@ -19,7 +20,8 @@ export async function run(): Promise<void> {
   const checks: string[] = [];
   const report: { success: boolean; vscodeVersion: string; checks: string[]; error?: string; limitations: string[] } = {
     success: false, vscodeVersion: vscode.version, checks,
-    limitations: ["Native exporter only; no Zotero writes or authorization prompts", "No manual dialog/button or Better BibTeX integration test"],
+    limitations: ["Native exporter only; no Zotero writes or authorization prompts", "No manual dialog/button or Better BibTeX integration test",
+      "MCP config generation uses an explicitly supplied test file; required file-picker behavior is covered by the extension bundle test"],
   };
   try {
     assert.equal(vscode.workspace.isTrusted, true, "The generated live-test workspace must be trusted in VS Code.");
@@ -29,19 +31,25 @@ export async function run(): Promise<void> {
     assert.equal(extension.isActive, true);
     checks.push("Extension activates in the installed VS Code host");
     const commands = await vscode.commands.getCommands(true);
-    for (const command of ["openSourceList", "updateBib", "insertCitation", "selectBibFile", "deleteAllCitations", "setupCodex", "setupClaude"]) {
+    for (const command of ["openSourceList", "updateBib", "insertCitation", "selectBibFile", "deleteAllCitations", "setupCodex", "setupClaude", "setupCursor"]) {
       assert.ok(commands.includes(`zoteroLatexAssistant.${command}`));
     }
     checks.push("Expected extension commands are registered");
-    await vscode.commands.executeCommand("zoteroLatexAssistant.setupCodex");
+    // Required native file selection cannot be bypassed in an unattended live host.
+    const selectedServer = path.join(root, "explicitly-selected-server.cjs");
+    await copyFile(path.resolve(__dirname, "../../mcp/server.cjs"), selectedServer);
+    const launch = mcpLaunch(folder!.uri.fsPath, selectedServer, "node", "http://localhost:23119/api/", 5000);
+    for (const client of ["codex", "claude", "cursor"] as const) await configureMcp(folder!.uri.fsPath, client, launch);
     const codexText = await readFile(path.join(folder!.uri.fsPath, ".codex", "config.toml"), "utf8");
     assert.ok(codexText.includes("[mcp_servers.zotero_latex_assistant]"));
     assert.ok(codexText.includes(folder!.uri.fsPath));
     assert.ok(codexText.includes("server.cjs"));
-    await vscode.commands.executeCommand("zoteroLatexAssistant.setupClaude");
     const claudeConfig = JSON.parse(await readFile(path.join(folder!.uri.fsPath, ".mcp.json"), "utf8"));
     assert.equal(claudeConfig.mcpServers.zotero_latex_assistant.args[2], folder!.uri.fsPath);
-    checks.push("Real extension commands write project-scoped Codex and Claude MCP configurations pointing at the bundled server");
+    const cursorConfig = JSON.parse(await readFile(path.join(folder!.uri.fsPath, ".cursor/mcp.json"), "utf8"));
+    assert.equal(cursorConfig.mcpServers.zotero_latex_assistant.args[0], selectedServer);
+    assert.equal(cursorConfig.mcpServers.zotero_latex_assistant.args[2], folder!.uri.fsPath);
+    checks.push("Project-scoped Codex, Claude and Cursor config generation uses an explicitly supplied server path");
     const connection = await new ZoteroClient().checkConnection();
     const client = new ZoteroClient({ ...(connection.serverId ? { serverId: connection.serverId } : {}) });
     const library = { type: "user" as const, id: 0 };
