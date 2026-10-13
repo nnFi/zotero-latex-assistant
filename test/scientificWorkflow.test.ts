@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { CONFIG_FILE, newProjectConfig, readProjectConfig, readProjectText, saveProjectConfig } from "../src/config/project";
@@ -35,7 +35,9 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
       return json(url.pathname === "/works" ? { message: { items: [message] } } : { message });
     }
     if (url.pathname === "/api/") return new Response("", { headers: controls.changedServer ? { ...headers, "Zotero-Server-ID": "db-B" } : headers });
-    if (url.pathname === `/api/users/0/collections/${collection}`) return json({ key: collection, data: { name: "Project" } });
+    if (url.pathname === `/api/users/0/collections/${collection}`) return json({ key: collection, version: 1, data: { name: "Project" } });
+    if (url.pathname === "/api/users/0/collections") return json([{ key: collection, version: 1, data: { name: "Project" } }]);
+    if (url.pathname === "/api/users/0/groups") return json([]);
     if (url.pathname === "/api/itemTypeFields") return json(["title", "DOI", "date", "extra", "url"].map((field) => ({ field })));
     if (url.pathname === "/api/itemTypeCreatorTypes") return json([{ creatorType: "author" }]);
     if (url.pathname === "/api/local/authorize") {
@@ -92,6 +94,173 @@ test("research reuses Zotero and bibliography matches before any external reques
   const manual = await f.service.research("Manual");
   assert.equal(manual.externalSearched, false); assert.equal(manual.bibliographyMatches[0]!.citationKey, "manual");
   assert(!f.calls.some((call) => call.url.hostname === "api.crossref.org")); assert.equal(f.writes().length, 0);
+});
+
+test("standalone Zotero reads need no project, settings, bibliography or state directory", async (t) => {
+  const f = await fixture(t);
+  const state = path.join(f.root, "private-state");
+  const service = new ZoteroProjectService(null, { fetch: f.fetch }, state);
+  const context = await service.context();
+  assert.equal(context.mode, "standalone"); assert.equal(context.project, null);
+  assert.equal(context.configured, false); assert.equal(context.bibliography.status, "disabled");
+  assert.deepEqual(context.library, library); assert.equal(f.calls.length, 0);
+  assert.equal((await service.search("Existing", 20, 0) as { total: number }).total, 1);
+  const scope = await service.selectedCollection() as { project: null; writeReady: boolean };
+  assert.equal(scope.project, null); assert.equal(scope.writeReady, false);
+  const detail = await service.metadata(library, "ITEM2345") as { warnings: { citationFiles: string[] } };
+  assert.deepEqual(detail.warnings.citationFiles, []);
+  assert.deepEqual((await service.listLibraries() as { libraries: { id: number }[] }).libraries.map((entry) => entry.id), [0]);
+  await assert.rejects(stat(state), { code: "ENOENT" });
+  await assert.rejects(service.setBibFile(), /No project is attached/);
+  await assert.rejects(service.addToBibliography(["ITEM2345"], "native"), /No project is attached/);
+  await assert.rejects(service.syncBibliography("native"), /No project is attached/);
+  await assert.rejects(stat(state), { code: "ENOENT" });
+  assert.equal(f.writes().length, 0);
+});
+
+test("standalone selection persists across restart and enables Zotero writes without a writing project", async (t) => {
+  const f = await fixture(t);
+  const state = path.join(f.root, "private-state");
+  const service = new ZoteroProjectService(null, { fetch: f.fetch }, state);
+  await assert.rejects(service.createNote(library, "ITEM2345", "Not selected", "text", "standalone-note-001", 10), /explicitly selected collection/);
+  assert.equal(f.writes().length, 0);
+  const selected = await service.setCollection(library, collection);
+  assert.equal(selected.settingsChanged, true); assert.equal(selected.projectFilesChanged, false);
+  assert.equal((await readProjectConfig(state))!.bibFile, "");
+  const restarted = new ZoteroProjectService(null, { fetch: f.fetch }, state);
+  assert.equal((await restarted.context()).collectionKey, collection);
+  assert.equal((await restarted.selectedCollection() as { writeReady: boolean }).writeReady, true);
+  const created = await restarted.createNote(library, "ITEM2345", "Standalone summary", "text", "standalone-note-001", 10);
+  assert.equal(created.status, "created");
+  const retried = await new ZoteroProjectService(null, { fetch: f.fetch }, state).createNote(library, "ITEM2345", "Standalone summary", "text", "standalone-note-001", 10);
+  assert.equal(retried.status, "already-created"); assert.equal(f.writes().length, 1);
+});
+
+test("project context inspects missing settings and a bibliography; MCP creates its own config without TeX", async (t) => {
+  const f = await fixture(t);
+  await rm(path.join(f.root, CONFIG_FILE));
+  await writeFile(path.join(f.root, "refs.bib"), "");
+  const context = await f.service.context();
+  assert.equal(context.configured, false); assert.equal(context.library, null);
+  assert.equal(context.bibliography.status, "available"); assert.equal(context.bibliography.bibFile, "refs.bib");
+  assert.equal(await readProjectConfig(f.root), undefined); assert.equal(f.calls.length, 0);
+  assert.equal((await f.service.setCollection(library, null)).status, "assigned");
+  const imported = await f.service.addToBibliography(["ITEM2345"], "native");
+  assert.equal(imported.status, "imported"); assert.equal(imported.bibFile, "refs.bib");
+  assert.equal((await readProjectConfig(f.root))!.bibFile, "refs.bib");
+  assert.match((await readProjectText(f.root, "refs.bib"))!, /@book\{existing2026/);
+  assert.equal(await readProjectText(f.root, "main.tex"), undefined); assert.equal(f.writes().length, 0);
+});
+
+test("direct bibliography import previews, preserves manual entries and chosen metadata, and is idempotent", async (t) => {
+  const f = await fixture(t);
+  f.seed("ITEM9999", { title: "Other source", citationKey: "other2026" });
+  const manual = "% Keep comment\n@string{pub={Manual macro}}\n@book{Manual,title={Manual source},publisher=pub}\n";
+  await writeFile(path.join(f.root, "refs.bib"), manual);
+  const config = await readProjectText(f.root, CONFIG_FILE);
+  const preview = await f.service.addToBibliography(["ITEM2345"], "native", undefined, true);
+  assert.equal(preview.status, "preview"); assert.equal(preview.projectFilesChanged, false);
+  assert.equal(preview.citationKeys.ITEM2345, "existing2026");
+  assert.equal(await readProjectText(f.root, "refs.bib"), manual); assert.equal(await readProjectText(f.root, CONFIG_FILE), config);
+  const imported = await f.service.addToBibliography(["ITEM2345"], "native");
+  assert.equal(imported.status, "imported"); assert(imported.backup);
+  assert.deepEqual(imported.importedItemKeys, ["ITEM2345"]);
+  const bib = (await readProjectText(f.root, "refs.bib"))!;
+  assert(bib.includes(manual)); assert.match(bib, /@book\{existing2026/); assert(!bib.includes("other2026"));
+  assert.equal(await readProjectText(f.root, `${imported.backup}/refs.bib`), manual);
+  assert.equal((await f.service.addToBibliography(["ITEM2345"], "native")).status, "unchanged");
+  const edited = bib.replace("Exported source", "Manually enriched title");
+  await writeFile(path.join(f.root, "refs.bib"), edited);
+  await f.service.addToBibliography(["ITEM2345", "ITEM9999"], "native");
+  const next = (await readProjectText(f.root, "refs.bib"))!;
+  assert(next.includes("Manually enriched title")); assert(next.includes(manual)); assert.match(next, /@book\{other2026/);
+  assert.equal(f.writes().length, 0);
+});
+
+test("direct bibliography import leaves absent and ambiguous files for the user to resolve", async (t) => {
+  const f = await fixture(t);
+  const config = await readProjectText(f.root, CONFIG_FILE);
+  assert.equal((await f.service.addToBibliography(["ITEM2345"], "native")).status, "not-found");
+  assert.equal(await readProjectText(f.root, "refs.bib"), undefined);
+  await writeFile(path.join(f.root, "one.bib"), ""); await writeFile(path.join(f.root, "two.bib"), "");
+  const ambiguous = await f.service.addToBibliography(["ITEM2345"], "native");
+  assert.equal(ambiguous.status, "ambiguous"); assert.deepEqual(ambiguous.candidates, ["one.bib", "two.bib"]);
+  assert.equal(await readProjectText(f.root, CONFIG_FILE), config);
+  assert.equal((await f.service.addToBibliography(["ITEM2345"], "native", "two.bib")).status, "imported");
+  assert.equal(await readProjectText(f.root, "one.bib"), "");
+});
+
+test("direct bibliography import supports Better BibLaTeX and rejects new DOI duplicates", async (t) => {
+  const f = await fixture(t);
+  f.controls.bbt = true;
+  await writeFile(path.join(f.root, "refs.bib"), "");
+  assert.equal((await f.service.addToBibliography(["ITEM2345"])).status, "imported");
+  assert(f.calls.some((call) => call.url.pathname === "/better-bibtex/json-rpc" && JSON.parse(call.body!).method === "item.export"));
+  assert.equal((await f.service.addToBibliography(["ITEM2345"])).status, "unchanged");
+  const duplicate = await fixture(t);
+  duplicate.controls.exportDoi = "10.1234/duplicate";
+  const existing = "@book{Manual,title={Manual source},doi={10.1234/duplicate}}\n";
+  await writeFile(path.join(duplicate.root, "refs.bib"), existing);
+  await assert.rejects(duplicate.service.addToBibliography(["ITEM2345"], "native"), /Duplicate DOI/);
+  assert.equal(await readProjectText(duplicate.root, "refs.bib"), existing);
+});
+
+test("direct bibliography import never changes TeX or client configuration and ignores private client directories", async (t) => {
+  const f = await fixture(t);
+  const config = (await readProjectConfig(f.root))!;
+  await saveProjectConfig(f.root, { ...config, bibFile: "", citationStyle: "uninstalledstyle" }, await readProjectText(f.root, CONFIG_FILE));
+  const tex = "\\addbibresource{\\dynamicresource}\n";
+  await writeFile(path.join(f.root, "main.tex"), tex);
+  await writeFile(path.join(f.root, "refs.bib"), "");
+  await mkdir(path.join(f.root, ".cursor"));
+  await writeFile(path.join(f.root, ".cursor/mcp.json"), '{"custom":"keep"}');
+  await writeFile(path.join(f.root, ".cursor/ignored.bib"), "");
+  const imported = await f.service.addToBibliography(["ITEM2345"], "native");
+  assert.equal(imported.status, "imported"); assert.deepEqual(imported.candidates, ["refs.bib"]);
+  assert.equal(await readProjectText(f.root, "main.tex"), tex);
+  assert.equal(await readProjectText(f.root, ".cursor/mcp.json"), '{"custom":"keep"}');
+});
+
+test("direct bibliography import rejects invalid sources, malformed files, paths and dependencies without writing", async (t) => {
+  const f = await fixture(t);
+  const config = await readProjectText(f.root, CONFIG_FILE);
+  await writeFile(path.join(f.root, "refs.bib"), "");
+  await assert.rejects(f.service.addToBibliography(["ITEM0000"], "native"), /outside/);
+  await assert.rejects(f.service.addToBibliography(["ITEM2345", "ITEM2345"], "native"), /unique/);
+  await assert.rejects(f.service.addToBibliography(["ITEM2345"], "native", "../outside.bib"));
+  const outside = await mkdtemp(path.join(tmpdir(), "bib-outside-"));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await writeFile(path.join(outside, "private.bib"), "");
+  await symlink(path.join(outside, "private.bib"), path.join(f.root, "linked.bib"));
+  await assert.rejects(f.service.addToBibliography(["ITEM2345"], "native", "linked.bib"), /outside/);
+  f.controls.dependency = true;
+  await assert.rejects(f.service.addToBibliography(["ITEM2345"], "native"), /dependencies/);
+  assert.equal(await readProjectText(f.root, "refs.bib"), "");
+  await writeFile(path.join(f.root, "refs.bib"), "@book{Broken,title={Oops}");
+  await assert.rejects(f.service.addToBibliography(["ITEM2345"], "native"), /Incomplete/);
+  assert.equal(await readProjectText(f.root, CONFIG_FILE), config); assert.equal(f.writes().length, 0);
+});
+
+test("direct bibliography import aborts concurrent file, selection and Zotero changes", async (t) => {
+  for (const scenario of ["bibliography", "removed-file", "config", "version", "membership", "database"] as const) {
+    await t.test(scenario, async (t) => {
+      const f = await fixture(t);
+      const original = "@book{Manual,title={Manual source}}\n";
+      await writeFile(path.join(f.root, "refs.bib"), original);
+      f.controls.afterExport = async () => {
+        if (scenario === "bibliography") await writeFile(path.join(f.root, "refs.bib"), "% User edit\n" + original);
+        if (scenario === "removed-file") await rm(path.join(f.root, "refs.bib"));
+        if (scenario === "config") await saveProjectConfig(f.root, { ...(await readProjectConfig(f.root))!, citationCommand: "textcite" }, await readProjectText(f.root, CONFIG_FILE));
+        if (scenario === "version") f.items.get("ITEM2345")!.version++;
+        if (scenario === "membership") f.items.get("ITEM2345")!.data.collections = [];
+        if (scenario === "database") f.controls.changedServer = true;
+      };
+      await assert.rejects(f.service.addToBibliography(["ITEM2345"], "native"));
+      const text = await readProjectText(f.root, "refs.bib");
+      assert.equal(text, scenario === "removed-file" ? undefined : scenario === "bibliography" ? "% User edit\n" + original : original);
+      assert.deepEqual((await readProjectConfig(f.root))!.importedItemKeys, []); assert.equal(f.writes().length, 0);
+    });
+  }
 });
 
 test("external title candidates are independently resolved; mismatched identifiers fail verification", async (t) => {

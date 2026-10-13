@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { Client } from "@modelcontextprotocol/client";
@@ -21,7 +21,17 @@ const attachment={key:"PDF12345",version:1,data:{itemType:"attachment",parentIte
 globalThis.fetch=async(input,init)=>{
  const u=new URL(String(input)); const p=u.pathname;
  const json=(v,status=200)=>new Response(JSON.stringify(v),{status,headers:h});
+ if(u.hostname==="pubcheck.net") {
+   const query=JSON.parse(init.body).query;
+   const title=query.match(/\btitle = \{([^}]*)\}/)?.[1]||"";
+   const doi=query.match(/\bdoi = \{([^}]*)\}/)?.[1]||null;
+   const isbn=query.match(/\bisbn = \{([^}]*)\}/)?.[1]||null;
+   return json({verification:{verdict:title==="Mismatching candidate"?"METADATA_MISMATCH":"VERIFIED",citation:{title,doi,isbn},
+     compared_fields:["title","authors","year","doi","isbn","journal"],reasons:["provider evidence"],resolved:{title,doi,isbn,source:"crossref"}}});
+ }
  if(u.hostname==="api.crossref.org"){
+   if(p.endsWith("isbn-format")) return json({message:{DOI:"10.1234/isbn-format",ISBN:["9783030854355","9783030854362"],"is-referenced-by-count":41}});
+   if(u.searchParams.has("filter")) return json({message:{"total-results":1,items:[{DOI:"10.1234/isbn-book",type:"book",ISBN:["9780306406157"],title:[saved?.title||"External ISBN publication"],"is-referenced-by-count":17}]}});
    if(p.endsWith("stdio-thesis")) return json({message:{DOI:"10.1234/stdio-thesis",type:"dissertation",title:["Protocol thesis"],publisher:"Commercial Publisher",institution:[{name:"Actual University"}]}});
    if(p.endsWith("stdio-report")) return json({message:{DOI:"10.1234/stdio-report",type:"report",title:["Protocol report"],publisher:"External Repository"}});
    if(p.endsWith("stdio-datacite")) return json({},404);
@@ -44,7 +54,7 @@ globalThis.fetch=async(input,init)=>{
  }
  if(p==="/api/itemTypeFields"){
    const type=u.searchParams.get("itemType");
-   return json(["title","date","url","extra",...(type==="thesis"?["university"]:type==="report"?["institution"]:["DOI","publisher"])].map(field=>({field})));
+   return json(["title","date","url","extra",...(type==="thesis"?["university"]:type==="report"?["institution"]:["DOI","publisher","ISBN"])].map(field=>({field})));
  }
  if(p==="/api/itemTypeCreatorTypes") return json([{creatorType:"author"}]);
  if(p==="/api/local/authorize") return json({key:"A".repeat(32),remember:false});
@@ -119,10 +129,10 @@ test("official MCP client exercises local tools and identifier tools over real b
     throw new Error(diagnostics || (error instanceof Error ? error.message : "No diagnostics captured"), { cause: error });
   }
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 29);
+  assert.equal(tools.length, 33);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object"); assert.equal(tool.outputSchema?.type, "object");
-    assert.equal(tool.annotations?.openWorldHint, ["zotero_lookup_identifier", "zotero_import_identifier", "zotero_research"].includes(tool.name));
+    assert.equal(tool.annotations?.openWorldHint, ["zotero_lookup_identifier", "zotero_import_identifier", "zotero_research", "zotero_check_sources", "zotero_check_candidate"].includes(tool.name));
   }
   assert.equal(tools.find((tool) => tool.name === "zotero_delete_item")!.annotations!.destructiveHint, true);
   const call = async (name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
@@ -133,6 +143,8 @@ test("official MCP client exercises local tools and identifier tools over real b
     assert(!JSON.stringify(output).includes("A".repeat(32)));
     return output.result;
   };
+  const context = await call("zotero_get_context");
+  assert.equal(context.mode, "project"); assert.equal(context.project, root);
   assert.equal((await call("zotero_set_project_bib_file")).status, "not-found");
   await writeFile(path.join(root, "one.bib"), ""); await writeFile(path.join(root, "two.bib"), "");
   const ambiguousBib = await call("zotero_set_project_bib_file");
@@ -175,6 +187,12 @@ test("official MCP client exercises local tools and identifier tools over real b
   assert.equal(created.status, "created"); assert.equal(created.version, 11);
   const metadataResult = await call("zotero_get_metadata", { library: item.library, itemKey: item.key });
   assert.equal(metadataResult.version, 11);
+  assert.equal(tools.find((tool) => tool.name === "zotero_check_sources")!.annotations!.readOnlyHint, true);
+  const checked = await call("zotero_check_sources", { itemKeys: [item.key], includeCitationCounts: false });
+  const source = (checked.results as { itemKey: string; pubcheck: { verdict: string; metadataMatches: boolean }; citations: { count: number | null; status: string } }[])[0]!;
+  assert.equal(source.itemKey, item.key); assert.equal(source.pubcheck.verdict, "VERIFIED"); assert.equal(source.pubcheck.metadataMatches, true);
+  assert.equal(source.citations.count, null); assert.equal(source.citations.status, "not-requested");
+  assert.equal(checked.contentVerified, false);
   assert.equal((await call("zotero_search", { query: "protocol" })).total, 1);
   const updated = await call("zotero_update_item", { library: item.library, itemKey: item.key, expectedVersion: 11, metadata: { fields: { publisher: "Corrected publisher" } } });
   assert.equal(updated.status, "updated"); assert.equal(updated.version, 12);
@@ -204,6 +222,9 @@ test("official MCP client exercises local tools and identifier tools over real b
   assert.deepEqual(bibPreview.citedKeys, ["LegacyExplicit2026"]);
   assert.equal((await call("zotero_sync_bibliography", { exporter: "native" })).status, "imported");
   assert.match((await readProjectText(root, "refs.bib"))!, /@book\{LegacyExplicit2026/);
+  const selectedBib = await call("zotero_add_to_bibliography", { itemKeys: [item.key], exporter: "native" });
+  assert.equal(selectedBib.status, "unchanged");
+  assert.equal((selectedBib.citationKeys as Record<string, string>)[item.key], "LegacyExplicit2026");
   const attachments = await call("zotero_list_attachments", { library: item.library, itemKey: item.key });
   assert.equal((attachments.attachments as unknown[]).length, 1);
   const file = await call("zotero_get_attachment", { library: item.library, itemKey: item.key, attachmentKey: "PDF12345" });
@@ -261,4 +282,116 @@ test("official MCP client exercises local tools and identifier tools over real b
   assert.equal((await call("zotero_delete_collection", { library: item.library, collectionKey: createdCollection.key, expectedVersion: 1 })).status, "deleted");
   assert.equal((await call("zotero_delete_collection", { library: item.library, collectionKey: createdCollection.key, expectedVersion: 1 })).status, "already-deleted");
   assert.equal(diagnostics, "");
+});
+
+test("external candidate MCP check runs before Zotero setup with the local API blocked and no project files", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "mcp-candidate-only-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const server = process.env.ZOTERO_MCP_TEST_SERVER ?? path.resolve(__dirname, "../../dist/mcp/server.cjs");
+  const code = mock + `\nconst externalFetch=globalThis.fetch;globalThis.fetch=(input,init)=>{if(new URL(String(input)).hostname==="localhost")throw new Error("Zotero must not be contacted for candidates");return externalFetch(input,init)};\nrequire(${JSON.stringify(server)}).main(["--state-dir",${JSON.stringify(path.join(root, "state"))}]).catch(()=>process.exit(1));`;
+  const client = new Client({ name: "candidate-only-acceptance", version: "1.0.0" });
+  t.after(() => client.close());
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: ["-e", code], stderr: "pipe" }));
+  const { tools } = await client.listTools();
+  const candidateTool = tools.find((tool) => tool.name === "zotero_check_candidate")!;
+  assert.equal(candidateTool.annotations!.readOnlyHint, true); assert.equal(candidateTool.annotations!.openWorldHint, true);
+  const response = await client.callTool({ name: "zotero_check_candidate", arguments: { metadata: {
+    itemType: "book", title: "External ISBN publication", fields: { ISBN: "0306406152", abstractNote: "Private text" },
+  } } });
+  assert(!response.isError, JSON.stringify(response));
+  const result = (response.structuredContent as { result: { pubcheck: { metadataMatches: boolean }; citations: { count: number; matchedBy: string };
+    zoteroChanged: boolean; projectFilesChanged: boolean } }).result;
+  assert.equal(result.pubcheck.metadataMatches, true); assert.equal(result.citations.count, 17); assert.equal(result.citations.matchedBy, "isbn");
+  assert.equal(result.zoteroChanged, false); assert.equal(result.projectFilesChanged, false);
+  const formatted = await client.callTool({ name: "zotero_check_candidate", arguments: { metadata: {
+    itemType: "book", title: "Recker ISBN format fixture", fields: { DOI: "10.1234/isbn-format", ISBN: "97830308543559783030854362" },
+  } } });
+  assert(!formatted.isError, JSON.stringify(formatted));
+  const formatResult = (formatted.structuredContent as { result: { pubcheck: { metadataMatches: boolean; isbnValidation: { status: string; isbns: string[] } }; citations: { count: number } } }).result;
+  assert.equal(formatResult.pubcheck.metadataMatches, true); assert.equal(formatResult.pubcheck.isbnValidation.status, "matched");
+  assert.deepEqual(formatResult.pubcheck.isbnValidation.isbns, ["9783030854355", "9783030854362"]); assert.equal(formatResult.citations.count, 41);
+  const mismatch = await client.callTool({ name: "zotero_check_candidate", arguments: { metadata: { itemType: "book", title: "Mismatching candidate" }, includeCitationCounts: false } });
+  assert(!mismatch.isError);
+  assert.equal((mismatch.structuredContent as { result: { pubcheck: { metadataMatches: boolean } } }).result.pubcheck.metadataMatches, false);
+  const invalid = await client.callTool({ name: "zotero_check_candidate", arguments: { metadata: { itemType: "note", title: "Not a publication" } } });
+  assert.equal(invalid.isError, true);
+  assert.deepEqual(await readdir(root), []);
+});
+
+test("bundled stdio works with Zotero alone and initializes a fresh project without TeX", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "mcp-independent-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const server = process.env.ZOTERO_MCP_TEST_SERVER ?? path.resolve(__dirname, "../../dist/mcp/server.cjs");
+  const connect = async (args: string[]) => {
+    const code = mock + `\nrequire(${JSON.stringify(server)}).main(${JSON.stringify(args)}).catch(()=>process.exit(1));`;
+    const client = new Client({ name: "standalone-acceptance", version: "1.0.0" });
+    const transport = new StdioClientTransport({ command: process.execPath, args: ["-e", code],
+      env: { XDG_STATE_HOME: path.join(root, "default-state"), LOCALAPPDATA: path.join(root, "default-state") }, stderr: "pipe" });
+    t.after(() => client.close());
+    await client.connect(transport);
+    return { client, call: async (name: string, arguments_: Record<string, unknown> = {}) => {
+      const response = await client.callTool({ name, arguments: arguments_ });
+      assert(!response.isError, JSON.stringify(response));
+      return (response.structuredContent as { result: Record<string, unknown> }).result;
+    } };
+  };
+  const defaults = await connect([]);
+  assert.equal((await defaults.call("zotero_get_context")).mode, "standalone");
+  assert.equal((await defaults.call("zotero_search", { query: "" })).total, 0);
+  await defaults.client.close();
+  const state = path.join(root, "standalone-state");
+  const standalone = await connect(["--state-dir", state]);
+  assert.equal((await standalone.call("zotero_get_context")).mode, "standalone");
+  assert.equal((await standalone.call("zotero_get_selected_collection")).project, null);
+  assert.equal((await standalone.call("zotero_search", { query: "" })).total, 0);
+  assert.equal(await readProjectConfig(state), undefined);
+  const selection = await standalone.call("zotero_set_project_collection", { library: { type: "user", id: 0 }, collectionKey: "COLL2345" });
+  assert.equal(selection.projectFilesChanged, false); assert.equal(selection.settingsChanged, true);
+  const disabled = await standalone.client.callTool({ name: "zotero_add_to_bibliography", arguments: { itemKeys: ["ITEM2345"] } });
+  assert.equal(disabled.isError, true);
+  await standalone.client.close();
+  const restarted = await connect(["--state-dir", state]);
+  assert.equal((await restarted.call("zotero_get_context")).collectionKey, "COLL2345");
+  await restarted.client.close();
+
+  const project = await connect(["--project", root]);
+  assert.equal((await project.call("zotero_get_context")).configured, false);
+  await project.call("zotero_set_project_collection", { library: { type: "user", id: 0 }, collectionKey: "COLL2345" });
+  const args = { metadata: { itemType: "book", title: "Independent bibliography source", fields: { ISBN: "0306406152" } }, requestId: "independent-create-001" };
+  // The fixture rejects the first source write, then permits the same operation.
+  await project.client.callTool({ name: "zotero_create_item", arguments: args });
+  const source = await project.call("zotero_create_item", args);
+  const itemKey = (source.item as { key: string }).key;
+  assert.equal((await project.call("zotero_add_to_bibliography", { itemKeys: [itemKey], exporter: "native" })).status, "not-found");
+  await writeFile(path.join(root, "literature.bib"), "@book{Manual,title={Keep}}\n");
+  const imported = await project.call("zotero_add_to_bibliography", { itemKeys: [itemKey], exporter: "native" });
+  assert.equal(imported.status, "imported"); assert.equal(imported.bibFile, "literature.bib");
+  assert.match((await readProjectText(root, "literature.bib"))!, /title=\{Keep\}/);
+  assert.equal(await readProjectText(root, "main.tex"), undefined);
+  assert.equal((await readProjectConfig(root))!.bibFile, "literature.bib");
+  await project.client.close();
+
+  const workspace = path.join(root, "another-workspace");
+  await mkdir(workspace);
+  const global = await connect(["--state-dir", state]);
+  const inspected = await global.call("zotero_get_context", { projectPath: workspace });
+  assert.equal(inspected.project, workspace); assert.equal(inspected.configured, false);
+  await global.call("zotero_set_project_collection", { projectPath: workspace, library: { type: "user", id: 0 }, collectionKey: null });
+  await global.client.callTool({ name: "zotero_create_item", arguments: args });
+  const globalSource = await global.call("zotero_create_item", args);
+  const globalKey = (globalSource.item as { key: string }).key;
+  const checked = await global.call("zotero_check_sources", { itemKeys: [globalKey] });
+  const isbnCount = (checked.results as { citations: { count: number; matchedBy: string; isbn: string; doi: string } }[])[0]!.citations;
+  assert.equal(isbnCount.count, 17); assert.equal(isbnCount.matchedBy, "isbn");
+  assert.equal(isbnCount.isbn, "9780306406157"); assert.equal(isbnCount.doi, "10.1234/isbn-book");
+  await writeFile(path.join(workspace, "refs.bib"), "");
+  assert.equal((await global.call("zotero_add_to_bibliography", { projectPath: workspace, itemKeys: [globalKey], exporter: "native" })).status, "imported");
+  assert.equal((await global.call("zotero_get_context")).mode, "standalone");
+  assert.equal((await global.call("zotero_get_context")).collectionKey, "COLL2345");
+  assert.equal((await readProjectConfig(workspace))!.collectionKey, "");
+  assert.equal(await readProjectText(workspace, ".cursor/mcp.json"), undefined);
+  const pinned = await connect(["--project", root]);
+  const wrongProject = await pinned.client.callTool({ name: "zotero_get_context", arguments: { projectPath: workspace } });
+  assert.equal(wrongProject.isError, true);
+  assert.match((wrongProject.structuredContent as { error: { message: string } }).error.message, /outside/);
 });

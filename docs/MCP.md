@@ -1,12 +1,87 @@
 # MCP mit Codex und Claude
 
-Stand: 12. Oktober 2026. Der lokale stdio-Server unterstützt Lesen, bibliografische
+Stand: 13. Oktober 2026. Der lokale stdio-Server unterstützt Lesen, bibliografische
 Neuanlage, gezielte Quellenaktualisierung, Notizverwaltung, wissenschaftliche Recherche
 mit zitatabhängigem Bib-Import, Verschieben in den Zotero-Papierkorb und Wiederherstellung,
 Anhängen lokaler PDFs als gespeicherte Kopie und Weitergabe
 angehängter PDFs an den Agenten.
 Sammlungen können angelegt, dem Projekt zugeordnet und nach einem Wechsel gelöscht werden.
 Es gibt keine lokale Textextraktion, OCR oder serverseitige Modellanalyse.
+
+## Zotero eigenständig und optional mit Schreibprojekt
+
+Der gebündelte MCP läuft ohne VS Code, LaTeX-Projekt, `.tex`, `.bib` oder
+TeX-Installation. Er benötigt Node.js 20+ und ein laufendes Zotero mit aktivierter
+lokaler API. Eine KI-Anwendung mit lokalem stdio-MCP startet ihn beispielsweise so:
+
+```sh
+node /absoluter/pfad/dist/mcp/server.cjs
+```
+
+Ohne Projekteinstellung liest er zunächst die persönliche Bibliothek (User 0).
+`zotero_get_context` prüft rein lesend den Modus, den Einstellungsort und die
+gewählte Bibliothek/Sammlung. `zotero_list_libraries` und `zotero_list_collections`
+helfen bei der Auswahl; `zotero_set_project_collection` speichert diese auch ohne
+Projekt. Der historische Werkzeugname bleibt kompatibel. Schreibaktionen in Zotero
+benötigen weiterhin eine ausdrücklich gewählte Sammlung, die gespeicherte
+Zotero-10-Datenbankkennung und Zotero-Freigabe.
+
+Die eigenständigen Einstellungen und Wiederholungsprotokolle liegen unter
+`~/.local/state/zotero-latex-assistant/.zotero/` auf Linux (bzw. unter
+`$XDG_STATE_HOME/zotero-latex-assistant/.zotero/`), unter
+`~/Library/Application Support/zotero-latex-assistant/.zotero/` auf macOS und
+`%LOCALAPPDATA%/zotero-latex-assistant/.zotero/` auf Windows.
+Mit `--state-dir /absoluter/ordner` lässt sich ein eigener Speicherort festlegen.
+Reine Lesezugriffe ohne gespeicherte Auswahl legen keine Dateien an.
+
+Wenn die KI in einem Schreibprojekt arbeitet, kann sie dessen **ausdrücklich
+gewählten absoluten Ordnerpfad** bei jedem Projektaufruf als `projectPath` angeben.
+Die unabhängige Zotero-Auswahl bleibt dabei erhalten. Das MCP rät keinen Ordner
+aus seinem Arbeitsverzeichnis oder Quelleninhalten. Alternativ bindet
+`--project /absolutes/projekt` den Server fest an genau dieses vorhandene Projekt;
+dann werden abweichende `projectPath`-Angaben abgewiesen. `--project` und
+`--state-dir` können nicht kombiniert werden.
+
+1. `zotero_get_context({"projectPath":"/absolutes/projekt"})` prüft, ob
+   `.zotero/config.json` eingerichtet ist und welche vorhandenen `.bib`-Dateien
+   gefunden werden. Die Prüfung benötigt kein laufendes Zotero und schreibt nichts.
+2. Bei fehlender Bibliotheksbindung legt `zotero_set_project_collection` mit
+   `projectPath`, der gewählten `library` und `collectionKey` die Konfiguration
+   selbst an. `collectionKey:null` erlaubt bibliotheksweites Lesen und Bib-Import,
+   aber keine Quellen-Schreibaktionen in Zotero.
+3. `zotero_add_to_bibliography` ergänzt ausdrücklich gewählte Zotero-Quellen in
+   einer vorhandenen `.bib`, ohne `.tex` vorauszusetzen oder zu ändern:
+
+```json
+{
+  "projectPath": "/absolutes/projekt",
+  "itemKeys": ["ITEM2345"],
+  "exporter": "native",
+  "dryRun": true
+}
+```
+
+Ohne `bibFile` verwendet der Import eine vorhandene konfigurierte Datei oder
+erkennt einen eindeutigen Kandidaten. Bei `ambiguous` zeigt die KI die `candidates`
+und fragt nach der gewünschten Datei; danach gibt sie deren relativen Pfad als
+`bibFile` an. Ohne Treffer folgt `not-found`: keine `.bib` wird angelegt.
+`dryRun:true` prüft auch den Export und zeigt die tatsächlichen Zitierschlüssel
+und geplanten Dateien. Zum Anwenden folgt derselbe Aufruf mit `dryRun:false`.
+Der Standardexporter ist `better-biblatex`; `native` ist die ausdrückliche Wahl
+für Zotero ohne Better BibTeX. Es gibt keinen stillen Wechsel des Exporters.
+
+Vorhandene Einträge, manuelle Metadaten und stabile Projektschlüssel bleiben
+erhalten. Wiederholter Import bereits enthaltener Quellen ist idempotent.
+Der Import sichert und aktualisiert ausschließlich die vorhandene `.bib` und
+`.zotero/config.json`. Er prüft Quelldaten, Versionen, Scope, Datenbank sowie
+Konfigurations-/Dateisnapshots erneut vor dem Schreiben. Mehrdeutige Exporte,
+unaufgelöste Abhängigkeiten und neue bibliografische Dubletten werden abgewiesen.
+Er schreibt weder in Zotero noch in die Konfiguration einer KI-Anwendung.
+
+Auch `zotero_set_project_bib_file` und `zotero_sync_bibliography` akzeptieren
+`projectPath`. Der bestehende Zitationsabgleich mit gespeicherten LaTeX-Dateien
+bleibt als zusätzlicher Workflow verfügbar. Offene Änderungen vorher speichern;
+der MCP sieht ausschließlich gespeicherte Dateien.
 
 ## Projekt-.bib-Datei auswählen
 
@@ -138,10 +213,150 @@ Zotero stellt keinen projektübergreifenden Zuordnungsindex bereit.
 API-Grundlage: [Sammlungen erstellen/löschen](https://www.zotero.org/support/dev/web_api/v3/write_requests#collection_requests)
 und [Zotero-Sammlungsmodell](https://github.com/zotero/zotero/blob/main/chrome/content/zotero/xpcom/data/collection.js).
 
+## Quellen bei PubCheck prüfen und Zitationszahlen abrufen
+
+Die PubCheck-Prüfung hat zwei Einstiege:
+
+- `zotero_check_sources` prüft vorhandene Zotero-Quellen im ausgewählten Scope.
+- `zotero_check_candidate` prüft eine gefundene Quelle **vor dem Zotero-Import**
+  anhand übergebener Metadaten. Es benötigt weder laufendes Zotero noch Projekt,
+  Bibliotheksbindung, Item-Key oder Dateien.
+
+Eine `.bib`-Datei und Better BibTeX sind dafür nicht erforderlich. Einzelne Quellen:
+
+```json
+{"itemKeys":["ITEM2345","ITEM2346"],"includeCitationCounts":true}
+```
+
+Für einen neuen Kandidaten `metadata` aus `zotero_research` oder
+`zotero_lookup_identifier` übernehmen bzw. tatsächlich recherchierte Angaben
+übergeben. Beispiel für einen Aufruf ohne Zitationszählung:
+
+```json
+{
+  "metadata": {
+    "itemType": "journalArticle",
+    "title": "Tatsächlicher Titel der gefundenen Publikation",
+    "creators": [{"creatorType":"author","firstName":"Ada","lastName":"Lovelace"}],
+    "fields": {"date":"2026","publicationTitle":"Tatsächlicher Zeitschriftentitel"}
+  },
+  "includeCitationCounts": false
+}
+```
+
+Vorhandene DOI/ISBN als `fields.DOI`/`fields.ISBN` mitgeben. Nur Typ und Titel
+sind Pflicht; fehlende Angaben bleiben leer. Die Funktion prüft die angegebenen
+Fakten und ersetzt keinen verdächtigen Titel durch Anbieterangaben. ISBN-Schreibweisen
+werden ausschließlich für die Prüfung normalisiert; die Zotero-/Eingabedaten bleiben erhalten.
+Notizen, Abstracts, Tags und Zitierschlüssel können in den übergebenen Metadaten
+stehen, werden aber nicht an die Prüfdienste gesendet. Anhänge/Notizen/Annotationen
+sind keine bibliografischen Kandidaten und werden vor externen Anfragen abgewiesen.
+
+Der neue Einstieg liefert `metadata`, `pubcheck`, `citations` und `guidance`.
+Die Nachweise, Statuswerte, Vergleiche und DOI-/ISBN-Zitationsabfragen sind dieselben
+wie bei gespeicherten Quellen. Er erfindet keine Zotero-Keys oder Versionen und
+meldet `zoteroChanged:false`, `projectFilesChanged:false`, `contentVerified:false`.
+Eine Prüfung legt keine Quelle an; die Übernahme bleibt eine separate Aktion.
+
+Für alle Quellen mit `{"limit":5,"offset":0}` beginnen und mit dem zurückgegebenen
+`nextOffset` fortsetzen, bis es `null` ist. Pro Aufruf sind höchstens zehn Quellen
+möglich. Die Reihenfolge richtet sich nach dem Zotero-Item-Key. Einzelne Schlüssel
+müssen eindeutig sein, zum Projektscope gehören und dürfen nicht im Papierkorb liegen.
+
+Jedes Ergebnis enthält `itemKey`, `title`, die gelesene Zotero-Version und:
+
+- `pubcheck.verdict`: `VERIFIED`, `METADATA_MISMATCH`, `RETRACTED`, `NOT_FOUND`,
+  `INVALID_IDENTIFIER`, `UNVERIFIABLE` oder `ERROR`, mit Gründen, verglichenen
+  Feldern, gefundenem Datensatz, Hinweisen und Rückzugsdaten-Snapshot.
+- `pubcheck.metadataMatches`: `true` nur bei positivem Vergleich des Titels und
+  aller übermittelten bibliografischen Vergleichsfelder; `false` bei gemeldeten
+  Abweichungen; sonst `null`. Ein aufgelöster DOI allein bestätigt keine Metadaten.
+- `citations.count`: Zitationen durch andere Publikationen, separat aus Crossrefs
+  `is-referenced-by-count`, mit DOI, ISBN, Anbieter, Herkunfts-URL, Abrufzeitpunkt
+  und `matchedBy` (`doi`, `isbn` oder bei ungeklärter Zuordnung `null`). Eine
+  vorhandene DOI hat Vorrang. Ohne DOI werden gültige ISBNs über Crossrefs
+  ISBN-Filter gesucht, einschließlich der entsprechenden ISBN-10 einer ISBN-13.
+  Crossrefs Index ist unvollständig; Zahlen ändern sich. Bei fehlenden gültigen
+  Kennungen, fehlendem Datensatz oder Dienstfehlern ist die Zahl `null`, nie ersatzweise `0`.
+  `0` mit Status `available` ist ein tatsächlich gemeldeter Indexwert.
+
+Der ISBN-Fallback unterstützt Zotero-Bücher und Buchabschnitte. ISBN, Quellentyp
+und normalisierter Titel müssen passen; vorhandene Autoren/Herausgeber, Jahr,
+Auflage und bei Kapiteln Buchtitel/Seiten werden ebenfalls verglichen. Abgekürzte
+Vornamen können zu vollständigen Namen passen; unterschiedliche vollständige
+Vornamen werden abgewiesen. Es wird genau ein DOI-Datensatz ausgewählt.
+`ambiguous` bedeutet mehrere passende DOI, `invalid-isbn` eine nicht nutzbare
+ISBN und `unsupported-type` einen Quellentyp, der über die ISBN nur auf ein
+übergeordnetes Buch verweisen könnte. Kapitelzählungen werden nie zum Buchwert
+addiert. Unvollständige Kandidaten oder Suchergebnisse ergeben `unavailable`.
+ISBNs/Ausgaben mit verschiedenen passenden DOI werden nicht zusammengefasst.
+Die Suche prüft höchstens fünf ISBN-Identitäten und ihre ISBN-10-Entsprechungen,
+100 Treffer pro Seite, höchstens 500 pro Filter und insgesamt zwölf Anfragen
+innerhalb von 20 Sekunden. Bei überschrittenen Grenzen bleibt die Zahl unbekannt;
+ein Treffer aus einer unvollständigen Suche wird nicht als eindeutig ausgegeben.
+Der MCP ergänzt eine gefundene DOI nicht automatisch in Zotero.
+
+
+### DOI und mehrere ISBNs korrekt prüfen
+
+PubCheck behandelt das ISBN-Feld bei Büchern als einzelne Kennung und kann es
+gegenüber einer vorhandenen DOI bevorzugen. Zusammengeklebte ISBNs oder eine
+kommaseparierte Liste konnten daher `NOT_FOUND` auslösen, obwohl der richtige
+DOI-Datensatz existiert. Der MCP verwendet jetzt eine gültige DOI als primäre
+PubCheck-Kennung und prüft **alle** angegebenen ISBNs separat gegen die ISBN-Liste
+auf genau dieser Crossref-DOI. Derselbe DOI-Abruf wird innerhalb einer Prüfung für
+ISBN-Abgleich und Zitationszählung gemeinsam verwendet.
+
+`pubcheck.isbnValidation` zeigt die normalisierten `isbns`, Anbieter, Herkunfts-URL,
+Grund und Status (`matched`, `unconfirmed`, `invalid`, `unavailable`). Nur wenn
+PubCheck alle übrigen Angaben bestätigt und sämtliche ISBNs auf dem DOI-Datensatz
+aufgeführt sind, wird `metadataMatches:true` gemeldet. Fehlende ISBNs im Register
+sind kein Beweis für falsche Angaben; bei unvollständiger oder fehlgeschlagener
+ISBN-Prüfung bleibt der Gesamtvergleich `null` und `isbn` steht in `uncomparedFields`.
+Die Prüfschritte stehen zusätzlich in `warnings`; Zotero wird nicht korrigiert.
+
+Vollständig gültige, aneinandergehängte ISBN-13-Werte werden anhand von Länge,
+Präfix und Prüfziffer getrennt. Beispielsweise wird
+`97830308543559783030854362` für die Prüfung zu
+`9783030854355` und `9783030854362`. Ungültige Teile werden nicht still weggelassen.
+Ohne gültige DOI werden mehrere ISBNs einzeln an PubCheck übergeben und in
+`isbnChecks` samt Hinweisen und Rückzugsinformationen ausgewiesen. Der Gesamtstatus
+bleibt `UNVERIFIABLE`, bis die konkrete Ausgabe eindeutig ausgewählt ist.
+
+PubPeer-Kommentare sind `advisories`: Die Hinweise kommen von PubCheck und werden
+vom MCP weitergereicht. Ihre Anzahl ist keine Zitationszahl und für sich genommen
+kein Ablehnungsgrund. Der Agent soll den Inhalt bei Bedarf gesondert ansehen.
+Quelle: [Crossref-ISBN-Filter](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-filters/).
+
+PubChecks `citation_count` zählt die geprüften Literaturangaben und wird **nicht**
+als Zitationszahl verwendet. `includeCitationCounts:false` überspringt die
+Zitationszählung. Bei DOI und vorhandenen ISBN-Angaben wird Crossref-Metadatenabgleich
+für die ISBNs weiterhin ausgeführt, auch wenn die Zählung ausgeschaltet ist.
+Fehler der beiden Dienste werden unabhängig pro Quelle gemeldet. Die Funktion
+ändert weder Zotero noch Projektdateien und bestätigt keine wissenschaftliche
+Richtigkeit oder Unterstützung konkreter Aussagen (`contentVerified:false`).
+Titelsuchen ohne DOI sind näherungsweise und brauchen menschliche Prüfung.
+
+Nur nach beauftragter externer Quellenprüfung verwenden: Titel, Autoren, Jahr,
+Publikationsort und DOI/ISBN werden an PubCheck übermittelt, DOI oder ISBN zusätzlich an
+Crossref. Notizen, Abstracts, PDFs und LaTeX-Inhalte werden nicht übertragen.
+Verwendet wird PubChecks öffentliche, unversionierte Browser-Schnittstelle
+`https://pubcheck.net/api/browser/lookup`; Änderungen daran können die Prüfung
+vorübergehend verhindern und werden als Fehler gemeldet. Beschreibungen:
+[PubCheck](https://pubcheck.net/about),
+[Crossref-Zitationsmetrik](https://github.com/CrossRef/rest-api-doc/blob/master/api_format.md).
+
+Ein vorgeschlagener Ablauf mit Prüfung vor dem Import und getrennten Entscheidungen
+für bestätigte, widersprüchliche und ungeklärte Quellen steht im
+[Research-Workflow](RESEARCH_WORKFLOW.md). Die Agentenanweisungen verlangen für
+beauftragte externe Prüfung neuer Kandidaten `zotero_check_candidate` vor der
+Übernahme. Ein positives PubCheck-Ergebnis wird von den Importwerkzeugen noch
+nicht technisch erzwungen; Kandidatenprüfung und Import bleiben separate Aufrufe.
+
 ## Wissenschaftlicher Ablauf, Notizen und Wiederherstellung
 
-Der Server stellt 29 Werkzeuge bereit. Der wissenschaftliche Ablauf ist in seinen
-Anweisungen verankert und über zwei zusätzliche Werkzeuge ausführbar:
+Der Server stellt 33 Werkzeuge bereit. Der wissenschaftliche Ablauf ist in seinen
+Anweisungen verankert und über Recherche-, Prüf- und Bibliografiewerkzeuge ausführbar:
 
 1. `zotero_research` sucht zuerst in der ausgewählten Zotero-Sammlung und der
    konfigurierten Projekt-.bib. Bei lokalen Treffern bleibt die Standardsuche lokal.
@@ -154,10 +369,15 @@ Anweisungen verankert und über zwei zusätzliche Werkzeuge ausführbar:
    Das bestätigt bibliografische Identität und Metadaten, keine wissenschaftlichen
    Aussagen oder Eignung für eine konkrete Behauptung (`contentVerified: false`).
    Dafür Publikation/PDF und belegbare Fundstellen selbst prüfen.
-3. Gewünschte neue Quellen über `zotero_import_identifier` nach Benutzerauftrag
+3. Neue Kandidaten mit `zotero_check_candidate` vor einer Übernahme prüfen;
+   vorhandene Zotero-Quellen mit `zotero_check_sources`. Widersprüchliche Angaben
+   und Rückzugswarnungen aus der normalen Belegauswahl ausschließen; fehlende,
+   fehlerhafte oder unvollständige Vergleiche als ungeklärt zurückstellen.
+   Metadatenprüfung, Zitationszahl und inhaltliche Eignung getrennt beurteilen.
+4. Gewünschte neue Quellen über `zotero_import_identifier` nach Benutzerauftrag
    in Zotero speichern; geeignete vorhandene Quellen wiederverwenden.
    Recherche, Notizen und Zotero-Neuanlagen übernehmen nichts in die .bib.
-4. Nach dem beauftragten Schreiben mit Zitationen LaTeX-Dateien speichern und
+5. Nach dem beauftragten Schreiben mit Zitationen LaTeX-Dateien speichern und
    `zotero_sync_bibliography` aufrufen. Der Server ermittelt selbst die ausdrücklich
    referenzierten Schlüssel aus gespeicherten `.tex`, `.ltx`, `.sty` und `.cls`
    im Projekt. Nur fehlende, eindeutig auflösbare Quellen werden automatisch
@@ -253,7 +473,7 @@ Zahnrad-Menü der Zotero-Seitenleiste (**Configure project**):
   Programmpfad in `zoteroLatexAssistant.nodePath` eintragen.
 - Zotero starten und unter Einstellungen → Erweitert die Kommunikation mit anderen
   Anwendungen erlauben. Lesen ist ohne Schlüssel möglich. Schreiben benötigt Zotero 10+.
-- Den lokalen LaTeX-Projektordner öffnen und über **Zotero: Set library** die
+- Optional den lokalen Schreibprojektordner öffnen und über **Zotero: Set library** die
   Bibliothek und ausdrücklich die gewünschte Sammlung auswählen. Dadurch werden
   Bibliothek, Sammlung und bei Zotero 10 die Server-ID in `.zotero/config.json` gespeichert.
   Eine `.bib`-Datei ist für Zotero-Lese-/Schreibwerkzeuge nicht erforderlich;
@@ -336,6 +556,9 @@ Operation markiert; es gibt kein Werkzeug für endgültiges Löschen.
 
 | Werkzeug | Eingaben | Ergebnis / Zugriff |
 | --- | --- | --- |
+| `zotero_check_candidate` | `metadata`, optional `includeCitationCounts` | PubCheck und DOI-/ISBN-Zitationszahl für eine noch nicht gespeicherte Quelle; kein Zotero-/Dateizugriff |
+| `zotero_get_context` | optional `projectPath` | Modus, Einstellungen, Bibliotheksbindung und vorhandene `.bib`-Kandidaten; ohne Änderungen |
+| `zotero_add_to_bibliography` | `itemKeys` (1–100), optional `projectPath`, `bibFile`, `exporter`, `dryRun` | Ausgewählte Quellen ohne `.tex` in vorhandene `.bib` ergänzen; Konfiguration und Sicherung |
 | `zotero_list_libraries` | keine | Lokale persönliche und Gruppenbibliotheken; Auswahl unverändert |
 | `zotero_list_collections` | keine | Sammlungen mit Elternschlüsseln der konfigurierten Bibliothek |
 | `zotero_get_selected_collection` | keine | Projekt, Bibliothek, Server-ID, Sammlung und `writeReady` |
@@ -707,7 +930,7 @@ Das [MCP-Prüfprotokoll](mcp-smoke-report.json) hält die Ergebnisse fest:
 - Claude Code 2.1.136 verband den Server und erkannte alle acht Werkzeuge. Der
   eigentliche Modellaufruf scheiterte mit `401`, weil die Anmeldung abgelaufen
   war. Claude-Lesen und Claude-Schreiben sind bis zur erneuten Anmeldung offen.
-- Automatisierte Tests prüfen alle 29 Werkzeuge mit dem offiziellen MCP-Client
+- Automatisierte Tests prüfen alle 33 Werkzeuge mit dem offiziellen MCP-Client
   über den gebündelten stdio-Prozess sowie Neuanlage, Zuordnung, Dubletten,
   Wiederholung nach verlorener Antwort, Papierkorb, Fremdscope, Datenbankwechsel,
   Versionskonflikte, verweigerte/abgelaufene Freigaben und Änderungen während des

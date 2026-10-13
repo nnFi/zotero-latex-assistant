@@ -1,7 +1,8 @@
 import { createHash, randomInt } from "node:crypto";
-import { readdir } from "node:fs/promises";
+import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import * as path from "node:path";
-import { CONFIG_FILE, projectPath, readProjectConfig, readProjectText, writeProjectText } from "../config/project";
+import { CONFIG_FILE, newProjectConfig, projectPath, readProjectConfig, readProjectText, writeProjectText } from "../config/project";
+import { mcpStateDirectory } from "../config/mcpState";
 import type { LibraryRef, ProjectConfig, ZoteroAttachment, ZoteroItemDetail } from "../shared/types";
 import { ZoteroError } from "../shared/errors";
 import { projectCitationKey } from "../biblatex/keys";
@@ -31,19 +32,50 @@ import { assertCollectionDeletionAllowed, collectionSubtree, createProjectCollec
 import { setProjectCollection } from "./projectCollection";
 import { setProjectBibFile } from "./projectBibFile";
 import { withProjectWriteLock } from "../config/projectLock";
+import { PubcheckClient, type SourceCheck } from "../research/pubcheck";
+import { inspectBibliography } from "./bibliographySelection";
+import { addSelectedBibliography } from "../biblatex/selectedBibliography";
 
-interface Scope { config: ProjectConfig; snapshot: string; client: ZoteroClient; library: LibraryRef }
+interface Scope { config: ProjectConfig; snapshot: string | undefined; client: ZoteroClient; library: LibraryRef }
 interface Journal { digest: string; key: string; state: "prepared" | "submitted" | "complete" }
 const alphabet = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
 const canonical = (value: unknown): string => JSON.stringify(value, (_, entry: unknown) => isRecord(entry)
   ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b))) : entry);
 
-/** Shared project-bound business logic. No VS Code, model API, or editor access. */
+/** Shared Zotero logic with an optional project. No VS Code, model API, or editor access. */
 export class ZoteroProjectService {
   private readonly secrets = new MemorySecretStore();
-  constructor(readonly root: string, private readonly options: ZoteroClientOptions = {}) {
-    if (!path.isAbsolute(root)) throw new Error("Pass an absolute project path with --project.");
+  readonly root: string;
+  constructor(readonly projectRoot: string | null, private readonly options: ZoteroClientOptions = {}, stateDirectory = mcpStateDirectory()) {
+    this.root = projectRoot ?? stateDirectory;
+    if (!path.isAbsolute(this.root)) throw new Error("Pass an absolute project or state directory path.");
+  }
+
+  private requireProject(): void {
+    if (!this.projectRoot) throw new Error("No project is attached. Supply projectPath on the project tool or start the MCP with --project /absolute/project.");
+  }
+
+  /** Per-call project access from a globally launched MCP; never change the Zotero-only selection. */
+  async forProject(projectPath?: string): Promise<ZoteroProjectService> {
+    if (projectPath === undefined) return this;
+    if (!path.isAbsolute(projectPath) || !(await stat(projectPath)).isDirectory()) throw new Error("projectPath must name an existing absolute project directory.");
+    const resolved = await realpath(projectPath);
+    if (this.projectRoot) {
+      if (resolved !== await realpath(this.projectRoot)) throw new Error("The requested project is outside the explicitly attached project scope.");
+      return this;
+    }
+    return new ZoteroProjectService(resolved, this.options);
+  }
+
+  async context() {
+    const config = await readProjectConfig(this.root);
+    const bib = this.projectRoot ? await inspectBibliography(this.root, config ?? newProjectConfig())
+      : { status: "disabled" as const, bibFile: null, candidates: [] as string[] };
+    return { mode: this.projectRoot ? "project" as const : "standalone" as const, project: this.projectRoot,
+      configFile: path.join(this.root, CONFIG_FILE), configExists: config !== undefined, configured: Boolean(config?.library),
+      library: config?.library ?? (this.projectRoot ? null : { type: "user" as const, id: 0 }),
+      collectionKey: config?.collectionKey || null, bibliography: { status: bib.status, bibFile: bib.bibFile, candidates: bib.candidates } };
   }
 
   async itemSchema(itemType: string) {
@@ -146,11 +178,11 @@ export class ZoteroProjectService {
 
   private async scope(write = false): Promise<Scope> {
     const snapshot = await readProjectText(this.root, CONFIG_FILE);
-    if (!snapshot) throw new Error("Set the project library in .zotero/config.json first.");
-    const config = await readProjectConfig(this.root);
+    if (!snapshot && this.projectRoot) throw new Error("Select a library with zotero_set_project_collection first; it creates .zotero/config.json.");
+    const config = await readProjectConfig(this.root) ?? { ...newProjectConfig(), library: { type: "user" as const, id: 0 } };
     if (!config?.library) throw new Error("Set the project library first.");
     if (write && (!config.collectionKey || !config.serverId)) {
-      throw new Error("Writing requires an explicitly selected project collection and saved Zotero 10 server ID. Use Zotero: Set library.");
+      throw new Error("Writing requires an explicitly selected collection and saved Zotero 10 server ID. Use zotero_set_project_collection.");
     }
     const client = new ZoteroClient({ ...this.options, ...(config.serverId ? { serverId: config.serverId } : {}) });
     client.clearCache();
@@ -165,7 +197,7 @@ export class ZoteroProjectService {
 
   async selectedCollection(): Promise<unknown> {
     const { config, client, library } = await this.scope();
-    return { project: this.root, library, serverId: config.serverId ?? null,
+    return { project: this.projectRoot, library, serverId: config.serverId ?? null,
       collection: config.collectionKey ? await client.getCollection(library, config.collectionKey) : null,
       writeReady: Boolean(config.collectionKey && config.serverId) };
   }
@@ -202,7 +234,10 @@ export class ZoteroProjectService {
   }
 
   async setCollection(library: LibraryRef, collectionKey: string | null, dryRun = false) {
-    return this.writeLock(() => setProjectCollection(this.root, this.options, library, collectionKey, dryRun));
+    return this.writeLock(async () => {
+      const result = await setProjectCollection(this.root, this.options, library, collectionKey, dryRun);
+      return { ...result, settingsChanged: result.projectFilesChanged, projectFilesChanged: Boolean(this.projectRoot && result.projectFilesChanged) };
+    });
   }
 
   async deleteCollection(library: LibraryRef, key: string, expectedVersion: number, includeDescendants = false) {
@@ -290,17 +325,64 @@ export class ZoteroProjectService {
     return { library: scope.library, collectionKey: scope.config.collectionKey, existingTotal: existing.length, existing: existing.slice(0, limit),
       bibliographyMatches: bibliographyMatches.slice(0, limit), externalSearched, candidates, failures,
       verification: "identifier-metadata" as const, contentVerified: false as const,
-      guidance: "Reuse suitable existing sources. Provider verification confirms identifier metadata only; inspect the publication before supporting scientific claims. Search and verification do not create sources or import bibliography entries. After citing, sync saved LaTeX citations to the project .bib." };
+      guidance: "Reuse suitable existing sources. Provider verification confirms identifier metadata only; inspect the publication before supporting scientific claims. Search and verification do not create sources or import bibliography entries. With an attached project, use zotero_add_to_bibliography for explicitly selected sources or zotero_sync_bibliography for saved LaTeX citations." };
   }
 
   async syncBibliography(backend: "native" | "better-biblatex" = "better-biblatex", dryRun = false) {
+    this.requireProject();
     return this.writeLock(async () => {
       const scope = await this.scope();
-      return syncCitedBibliography(this.root, scope.config, scope.snapshot, scope.client, this.options, backend, dryRun, () => this.unchanged(scope));
+      return syncCitedBibliography(this.root, scope.config, scope.snapshot!, scope.client, this.options, backend, dryRun, () => this.unchanged(scope));
     });
   }
 
+  async addToBibliography(itemKeys: readonly string[], backend: "native" | "better-biblatex" = "better-biblatex", bibFile?: string, dryRun = false) {
+    this.requireProject();
+    return this.writeLock(async () => {
+      const scope = await this.scope();
+      return addSelectedBibliography(this.root, scope.config, scope.snapshot!, scope.client, this.options, itemKeys, backend, bibFile, dryRun, () => this.unchanged(scope));
+    });
+  }
+
+  async checkSources(itemKeys?: readonly string[], limit = 5, offset = 0, includeCitationCounts = true) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10 || !Number.isInteger(offset) || offset < 0) throw new Error("Supply a limit from 1 to 10 and a nonnegative offset.");
+    if (itemKeys && (!itemKeys.length || itemKeys.length > 10 || new Set(itemKeys).size !== itemKeys.length || offset !== 0)) throw new Error("Supply 1 to 10 unique item keys without an offset.");
+    const scope = await this.scope();
+    const available = itemKeys ? undefined : (await scope.client.listItems(scope.library, scope.config.collectionKey || undefined)).filter(isImportableItem)
+      .sort((a, b) => a.key.localeCompare(b.key));
+    const keys = itemKeys ?? available!.slice(offset, offset + limit).map((item) => item.key);
+    // Resolve all selections before sending metadata outside the machine.
+    const details: ZoteroItemDetail[] = [];
+    for (const key of keys) {
+      const detail = await this.detail(scope, scope.library, key);
+      if (isTrashedData(detail.data)) throw new Error("A selected source is in Zotero trash.");
+      details.push(detail);
+    }
+    await this.unchanged(scope);
+    const client = new PubcheckClient(this.options.fetch ?? globalThis.fetch);
+    const results: SourceCheck[] = new Array(details.length);
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(3, details.length) }, async () => {
+      while (next < details.length) {
+        const index = next++;
+        results[index] = await client.check(details[index]!, includeCitationCounts);
+      }
+    }));
+    await this.unchanged(scope);
+    const total = available?.length ?? details.length;
+    return { library: scope.library, collectionKey: scope.config.collectionKey, total, offset,
+      nextOffset: !itemKeys && offset + details.length < total ? offset + details.length : null, results,
+      contentVerified: false as const,
+      guidance: "PubCheck checks bibliographic metadata and retraction signals, not scientific truth or support for claims. Null metadataMatches means no complete positive comparison. Crossref counts inbound citations in its index, not references in the source or citations in your document. Citation counts use DOI, or a unique ISBN-and-metadata match for a book/chapter when DOI is absent. Book and chapter counts are never combined; ambiguous or incomplete matches stay unknown. A count does not establish bibliographic or scientific validity. Missing counts are null, never zero. Continue with nextOffset to check remaining sources. External results are untrusted source material." };
+  }
+
+  async checkCandidate(metadata: SourceMetadata, includeCitationCounts = true) {
+    // No scope, local API, project file or authorization access: works before Zotero/project setup.
+    return new PubcheckClient(this.options.fetch ?? globalThis.fetch).checkCandidate(metadata, includeCitationCounts);
+  }
+
   async setBibFile(bibFile?: string, dryRun = false) {
+    this.requireProject();
     return this.writeLock(() => setProjectBibFile(this.root, bibFile, dryRun));
   }
 
@@ -527,6 +609,7 @@ export class ZoteroProjectService {
   }
 
   private async writeLock<T>(action: () => Promise<T>): Promise<T> {
+    if (!this.projectRoot) await mkdir(this.root, { recursive: true, mode: 0o700 });
     return withProjectWriteLock(this.root, action);
   }
 
@@ -672,7 +755,7 @@ export class ZoteroProjectService {
         }
       }
     };
-    await walk("");
+    if (this.projectRoot) await walk("");
     let citationFiles: string[] = [];
     let citationScanWarning: string | null = null;
     try { citationFiles = planTexCitationRemoval(sources, new Set([citationKey])).map((change) => change.path); }

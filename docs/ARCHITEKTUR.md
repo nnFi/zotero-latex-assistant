@@ -14,7 +14,7 @@ Stand: 12. Oktober 2026. Der Projektauftrag ist in
 | `src/pdf/` | Historische Platzhalter | Keine lokale Textextraktion auf Benutzerwunsch; Agent erhält PDF-Dateien |
 | `src/research/` | Externe Recherche und Metadatenverifikation | Crossref-DOI-/Titelsuche mit Metadatenvorschau |
 | `src/shared/` | Typen und einheitliche Fehler | Vorhanden |
-| `mcp/` | Eigenständiger Prozess über stdio | 28 Werkzeuge für Codex, Claude und andere lokale MCP-Clients |
+| `mcp/` | Eigenständiger Prozess über stdio | 33 Werkzeuge für Codex, Claude und andere lokale MCP-Clients |
 
 Die wissenschaftliche Orchestrierung liegt in `ZoteroProjectService.research`:
 Bestandsprüfung in Zotero/Projekt-.bib vor optionaler externer Suche, danach
@@ -242,11 +242,23 @@ Schreibadapter ist über `ZoteroProjectService` an MCP-Neuanlage und Papierkorb 
 Quellen: [Lokale API](https://www.zotero.org/support/dev/web_api/v3/local_api),
 [PATCH und Versionsprüfung](https://www.zotero.org/support/dev/web_api/v3/write_requests).
 
-Crossref erhält nur eine aktiv eingegebene DOI oder Titelanfrage. Der Client
+Crossref erhält eine aktiv eingegebene DOI oder Titelanfrage; die beauftragte
+Quellenprüfung ruft Zitationszahlen über DOI oder einen ISBN-Filter ab.
+`crossrefIsbn.ts` vergleicht ISBN, Buch-/Kapiteltyp, Titel und vorhandene weitere
+Metadaten. Mehrdeutige DOI und unvollständige Suche bleiben unbekannt;
+Kapitelzählungen werden nicht zu Buchzählungen addiert. Der Client
 verwendet ausschließlich `https://api.crossref.org`, hat ein Zeitlimit und
 behandelt fehlende DOIs, Rate-Limits sowie unpassende Antworten. Die Ergebnisse
 werden zur Prüfung angezeigt; es erfolgt keine automatische Zotero-Neuanlage.
 Quelle: [Crossref REST API](https://github.com/CrossRef/rest-api-doc).
+
+`sourceMetadata.ts` stellt eine bibliografische Eingabe ohne Zotero-Key oder
+Bibliotheksbindung bereit. `PubcheckClient` verwendet dieselbe Nachweisprüfung und
+DOI-/ISBN-Zitationsabfrage für gespeicherte Quellen und neue Kandidaten.
+`zotero_check_candidate` benötigt keinen lokalen Zotero-API-Zugriff oder
+Dateizugriff; die eingegebenen Metadaten werden unverändert geprüft und gemeinsam
+mit den Nachweisen zurückgegeben. Prüfstatus und Import sind separate Aktionen;
+ein positiver PubCheck-Status ist bisher keine technisch erzwungene Importbedingung.
 
 ## Quellenliste statt Detailformular
 
@@ -426,11 +438,18 @@ einen ausdrücklichen Override. Es erfolgt keine automatische Zusammenführung
 und keine Dublettenbereinigung in Zotero.
 
 
-## Projektgebundener MCP-Server
+## MCP-Server mit optionalem Projekt
 
 `src/zotero/projectService.ts` ist die gemeinsame Geschäftslogik ohne VS-Code-API.
-Der stdio-Einstieg erfordert einen absoluten `--project`-Pfad; API-URL und Timeout
-sind separate Startargumente. Jede Operation liest die geschützte Projektbindung
+Der stdio-Einstieg funktioniert ohne Projekt; eine initiale persönliche Bibliothek
+ermöglicht Lesen ohne Konfiguration. Eine ausdrückliche Sammlungswahl wird in einem
+privaten Zustandsordner gespeichert. Ein absoluter `--project`-Pfad bindet optional
+ein vorhandenes Schreibprojekt; ohne feste Bindung erlauben Projektwerkzeuge einen
+expliziten `projectPath` je Aufruf. API-URL und Timeout sind separate Startargumente.
+`zotero_get_context` prüft Konfiguration und Bib-Kandidaten rein lesend;
+`zotero_add_to_bibliography` ergänzt ausdrücklich gewählte Quellen in eine vorhandene
+`.bib` und speichert die Zuordnung mit transaktionalen Sicherungen, ohne TeX-Dateien
+zu ändern. Jede Operation liest die geschützte Projekt- bzw. Zotero-Bindung
 neu und verwendet die vorhandenen Client-Validierungen und `RequestCoordinator`.
 Metadaten und Suche bleiben im gewählten Bibliotheks-/Sammlungsscope. Die
 Dublettenprüfung vergleicht aktive bibliografische Quellen der gesamten gebundenen

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { IdentifierClient, normalizeIdentifier } from "../src/research/identifiers";
-import { normalizeIsbn } from "../src/research/isbn";
+import { isbnIdentities, normalizeIsbn, parseIsbnList } from "../src/research/isbn";
 import { metadataSchema, sourceDuplicates } from "../src/zotero/metadata";
 import { metadataCompleteness } from "../src/zotero/completeness";
 import { parseItem } from "../src/zotero/items";
@@ -23,6 +23,20 @@ test("ISBN checksum validation and equivalent edition identity; malformed identi
     await assert.rejects(client.lookup(input));
   }
   assert.equal(calls, 0);
+});
+
+test("complete ISBN lists and adjacent Zotero ISBN-13 values are decoded without salvaging invalid fragments", () => {
+  const expected = ["9783030854355", "9783030854362"];
+  for (const value of ["97830308543559783030854362", "978-3-030-85435-5 978-3-030-85436-2", "9783030854355;9783030854362"]) {
+    assert.deepEqual(parseIsbnList(value), expected);
+    assert.deepEqual(isbnIdentities(value), expected);
+  }
+  assert.deepEqual(parseIsbnList("ISBN-10: 0-306-40615-2"), ["9780306406157"]);
+  assert.deepEqual(parseIsbnList("0306406152 9780140328721"), ["9780306406157", "9780140328721"]);
+  for (const value of ["97830308543559783030854363", "9783030854355;invalid", "x97830308543559783030854362", "978303085435597830308543620"]) {
+    assert.throws(() => parseIsbnList(value));
+  }
+  assert.deepEqual(isbnIdentities("97830308543559783030854363"), []);
 });
 
 test("Crossref maps article metadata without using ingestion dates as publication dates", async () => {

@@ -4,6 +4,9 @@
 Quellen in VS Code auswählen, in die Projektbibliografie übernehmen und beim
 Schreiben zitieren. Zotero läuft dafür auf deinem Rechner.
 
+**MCP einrichten:** [Kurzanleitung für VS Code und Cursor](MCP-README.md) –
+Serverdatei finden, Startangaben und Konfiguration zum Kopieren.
+
 ## Funktionen
 
 | Funktion | Das kannst du damit machen |
@@ -119,8 +122,21 @@ Im Zahnradmenü **Set up Codex MCP connection** oder
 du zusätzlich **Node.js ab Version 20** und die jeweilige KI-Erweiterung.
 
 Der Agent kann unter anderem Quellen recherchieren, Notizen bearbeiten,
-Literatur über DOI oder ISBN übernehmen und PDFs erhalten.
+Literatur über DOI oder ISBN übernehmen und PDFs erhalten. Mit
+`zotero_check_sources` prüft er Zotero-Quellen bei PubCheck auf passende Literaturangaben
+und Rückzugswarnungen und ruft die Zahl der Zitationen durch andere Publikationen
+separat bei Crossref über DOI oder einen eindeutigen ISBN-Treffer ab. Das prüft bibliografische Angaben, keine wissenschaftlichen
+Aussagen; fehlende Zitationszahlen werden als unbekannt ausgewiesen.
+`zotero_check_candidate` bietet dieselbe Prüfung für recherchierte Quellen vor
+dem Import, auch ohne laufendes Zotero. Dadurch kann die KI widersprüchliche
+Angaben erkennen, bevor sie eine Quelle übernimmt.
 [Einrichtung, Freigaben und Beispiele](docs/MCP.md#voraussetzungen-und-einrichtung).
+
+Der MCP kann auch **eigenständig mit Zotero** laufen, ohne VS Code oder
+LaTeX-Projekt. Wenn ein Schreibprojekt angegeben ist, prüft er seine Einstellungen,
+kann die Zotero-Zuordnung selbst speichern und ausgewählte Quellen in eine
+vorhandene `.bib` übernehmen. Eine `.tex`-Datei ist dafür nicht erforderlich.
+[Eigenständiger MCP und optionaler Bib-Import](docs/MCP.md#zotero-eigenständig-und-optional-mit-schreibprojekt).
 
 ## Hilfe
 

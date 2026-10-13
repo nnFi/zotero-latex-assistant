@@ -1,4 +1,8 @@
 {
-  "files.exclude": { "**/dist": true },
+  "files.exclude": {
+    "**/dist/src": true,
+    "**/dist/test": true,
+    "**/dist/**/*.map": true
+  },
   "search.exclude": { "**/dist": true, "**/node_modules": true }
 }

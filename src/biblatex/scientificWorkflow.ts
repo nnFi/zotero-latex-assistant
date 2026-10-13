@@ -18,7 +18,7 @@ export async function projectTexSources(root: string, includeBibliographies = fa
     for (const entry of await readdir(relative ? await projectPath(root, relative) : root, { withFileTypes: true })) {
       if (entry.isSymbolicLink()) continue;
       const file = relative ? `${relative}/${entry.name}` : entry.name;
-      if (entry.isDirectory() && ![".git", ".zotero", ".codex", ".claude", "node_modules", "dist", "build", "out"].includes(entry.name)) await walk(file);
+      if (entry.isDirectory() && ![".git", ".zotero", ".codex", ".claude", ".cursor", "node_modules", "dist", "build", "out"].includes(entry.name)) await walk(file);
       if (entry.isFile() && (/\.(tex|ltx|sty|cls)$/.test(entry.name) || (includeBibliographies && entry.name.endsWith(".bib")))) {
         const text = await readProjectText(root, file);
         if (text !== undefined) sources.push({ path: file, text });

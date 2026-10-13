@@ -19,6 +19,7 @@ docs/**
 .env*
 dist/src/**
 !docs/MCP.md
+!docs/RESEARCH_WORKFLOW.md
 !docs/mcp-smoke-report.json
 
 !docs/pdf-handoff-smoke-report.json

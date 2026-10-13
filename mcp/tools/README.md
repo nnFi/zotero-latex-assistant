@@ -1,21 +1,25 @@
 # Implementierte MCP-Werkzeuge
 
-Der eigenständige stdio-Einstieg `mcp/server.ts` registriert 29 Werkzeuge über
+Der eigenständige stdio-Einstieg `mcp/server.ts` registriert 33 Werkzeuge über
 das offizielle TypeScript-SDK 2.3.1. Die gemeinsame Geschäftslogik liegt in
 `src/zotero/projectService.ts`; sie importiert keine VS-Code-API.
 
 | Werkzeug | Zweck |
 | --- | --- |
+| `zotero_get_context` | Eigenständigen Betrieb oder explizites Projekt, gespeicherte Einstellungen und vorhandene `.bib`-Kandidaten prüfen |
+| `zotero_add_to_bibliography` | Ausgewählte Quellen in eine vorhandene Projekt-.bib übernehmen, ohne `.tex` zu benötigen oder zu ändern |
 | `zotero_list_libraries` | Bibliotheken für die Projekteinstellung anzeigen |
 | `zotero_list_collections` | Sammlungen der konfigurierten Bibliothek anzeigen |
 | `zotero_get_collection` | Sammlung, Version, Unter-Sammlungen und Löschsperre prüfen |
 | `zotero_create_collection` | Sammlung oder Unter-Sammlung mit stabiler Anfrage-ID anlegen |
-| `zotero_set_project_collection` | Projekt wie „Set library“ zuordnen bzw. Sammlung mit gesicherter Literatur-/Zitationsbereinigung wechseln |
+| `zotero_set_project_collection` | Ohne Projekt die Zotero-Auswahl speichern; mit Projekt Konfiguration anlegen bzw. Sammlung mit gesicherter Literatur-/Zitationsbereinigung wechseln |
 | `zotero_delete_collection` | Nicht zugeordnete Sammlung versionsgeschützt löschen; zugeordnete Sammlung und ihre Vorfahren bleiben gesperrt |
 | `zotero_get_selected_collection` | Projektbindung und Schreibbereitschaft prüfen |
 | `zotero_set_project_bib_file` | Vorhandene Projekt-.bib erkennen bzw. nach Auswahl eines zurückgegebenen Kandidaten ausdrücklich setzen; ohne Treffer nichts ändern |
 | `zotero_search` | Bibliografische Quellen im ausgewählten Scope durchsuchen |
 | `zotero_research` | Zotero und Projekt-.bib zuerst durchsuchen, danach bei Bedarf neue Identifier-Metadaten mit Herkunft verifizieren |
+| `zotero_check_sources` | Metadaten und Rückzugswarnungen bei PubCheck prüfen; Crossref-Zitationszahl über DOI oder eindeutige ISBN-/Buch-/Kapitelzuordnung abrufen |
+| `zotero_check_candidate` | Neue, noch nicht in Zotero gespeicherte Quelle mit derselben PubCheck-/Zitationsprüfung prüfen; ohne Zotero, Projekt oder Dateischreiben |
 | `zotero_sync_bibliography` | Nur fehlende, ausdrücklich zitierte Quellen aus gespeicherten LaTeX-Dateien automatisch in die .bib übernehmen |
 | `zotero_list_notes` | Notizschlüssel, Elternquelle und Versionen auflisten |
 | `zotero_get_note` | Vollständigen gespeicherten HTML-Inhalt einer Quellennotiz lesen |
@@ -37,6 +41,11 @@ das offizielle TypeScript-SDK 2.3.1. Die gemeinsame Geschäftslogik liegt in
 | `zotero_delete_item` | Quelle versionsgeschützt in den wiederherstellbaren Papierkorb verschieben |
 
 Schemas, Annotationen und Beschreibungen stehen direkt an den Registrierungen.
+Ohne `--project` arbeitet der Server eigenständig mit Zotero. Projektwerkzeuge
+akzeptieren optional einen ausdrücklich gewählten absoluten `projectPath` je
+Aufruf; ein mit `--project` fest gebundener Server erlaubt keinen anderen Ordner.
+`zotero_get_context` prüft vor der Einrichtung; `zotero_set_project_collection`
+legt fehlende Einstellungen selbst an. Ohne vorhandene `.bib` wird keine erzeugt.
 Ergebnisse haben `ok` und `result` bzw. `error`, ergänzt um MCP-Textinhalt.
 Schreiben braucht eine ausdrückliche Benutzeranweisung oder Zustimmung zum
 Vorschlag, konfigurierte Bibliothek, ausgewählte Sammlung, Server-ID und Zotero-Freigabe.
