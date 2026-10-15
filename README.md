@@ -48,21 +48,97 @@ Autor-Jahr-Stil.
 
 ## Installation
 
-**Du brauchst:** VS Code ab 1.95, Zotero Desktop mit aktivierter lokaler API und
-für dein LaTeX-Dokument eine TeX-Installation mit BibLaTeX.
+### Vollständige Liste der benötigten Programme
+
+| Bestandteil | Wann brauchst du ihn? |
+| --- | --- |
+| **Aktuelles VS Code** | Für die Extension; diese benötigt mindestens Version 1.95. Verwende für aktuelle weitere Erweiterungen ein aktuelles VS Code. |
+| **Zotero Desktop** | Für deine Literatur und die lokale Verbindung. Für Schreibzugriffe durch die KI ist Zotero 10 oder neuer erforderlich. |
+| **Zotero LaTeX Assistant** | Unsere VS-Code-Extension, installiert aus der `.vsix`-Datei. |
+| **TeX-Distribution** | Zum Erstellen deiner LaTeX-PDFs; beispielsweise TeX Live unter Linux/Windows oder MacTeX unter macOS. |
+| **BibLaTeX und Biber** | LaTeX-Paket und Programm für Literaturverzeichnisse; werden über die TeX-Distribution bzw. den Paketmanager installiert. |
+| **`kpsewhich`** | Bestandteil der TeX-Distribution; die Extension benötigt es zum Finden installierter Zitierstile. |
+| **LaTeX Workshop und `latexmk`** | Empfohlen für das Bauen und die PDF-Vorschau in VS Code. LaTeX Workshop ist eine VS-Code-Extension; `latexmk` gehört zur TeX-Installation. |
+| **Better BibTeX for Zotero** | Zusätzliches Zotero-Plugin für den standardmäßig verwendeten Export. Es wird **nicht mit Zotero mitgeliefert**. Alternativ ist der native Zotero-Export möglich. |
+| **Node.js und ein MCP-fähiger KI-Client** | Nur für die optionale KI-Anbindung: Node.js ab Version 20, bei Neuinstallation eine aktuelle LTS-Version; dazu beispielsweise Codex, Claude Code oder Cursor. |
+
+### TeX und die LaTeX-Werkzeuge installieren
+
+- **Fedora:** Die folgenden Pakete decken eine grundlegende LaTeX-Installation,
+  BibLaTeX, Biber, `kpsewhich` und `latexmk` ab:
+
+  ```sh
+  sudo dnf install texlive-scheme-basic texlive-biblatex texlive-kpathsea biber latexmk
+  ```
+
+- **Andere Linux-Systeme / Windows:** [TeX Live installieren](https://tug.org/texlive/quickinstall.html).
+- **macOS:** [MacTeX installieren](https://www.tug.org/mactex/).
+
+Zusätzliche Schriften, Sprach- oder Stilpakete hängen von deiner Dokumentvorlage ab.
+Nach der Installation müssen die Programme im Terminal von VS Code erreichbar sein.
+VS Code gegebenenfalls neu starten. Prüfen mit:
+
+```sh
+pdflatex --version
+biber --version
+latexmk -v
+kpsewhich biblatex.sty
+kpsewhich authoryear.bbx
+kpsewhich authoryear.cbx
+```
+
+Die ersten drei Befehle sollen Versionsangaben ausgeben, die letzten drei
+Dateipfade. Für einen anderen Zitierstil müssen dessen `.bbx`- und `.cbx`-Dateien
+installiert sein. [TeX-Live-Grundpaket für Fedora](https://packages.fedoraproject.org/pkgs/texlive/texlive-scheme-basic/).
+
+### Zotero und Better BibTeX einrichten
+
+1. Zotero Desktop installieren und starten. Unter **Einstellungen → Erweitert**
+   die Kommunikation mit anderen Anwendungen auf diesem Computer erlauben.
+   Zotero muss während der Nutzung der Extension laufen.
+2. Auf der [Better-BibTeX-Downloadseite](https://github.com/retorquere/zotero-better-bibtex/releases/latest)
+   unter **Assets** die zur Zotero-Version passende Datei
+   **`zotero-better-bibtex-….xpi`** herunterladen.
+   In Firefox **Rechtsklick → Ziel speichern unter …** verwenden.
+3. In **Zotero → Werkzeuge → Plugins** oben rechts auf das **Zahnrad** klicken
+   und **Plugin aus Datei installieren …** wählen.
+4. Die heruntergeladene `.xpi`-Datei auswählen, die Installation bestätigen und
+   Zotero neu starten, falls dazu aufgefordert.
+5. In der Plugin-Liste prüfen, dass **Better BibTeX** aktiviert ist.
+
+[Offizielle Better-BibTeX-Anleitung](https://retorque.re/zotero-better-bibtex/installation/)
+und [Zotero-Einstellung für die lokale API](https://www.zotero.org/support/dev/web_api/v3/local_api).
+
+Ohne Better BibTeX kannst du beim ersten Import oder Zitieren **Use Zotero export**
+wählen. Damit nutzt dieses Projekt den nativen Zotero-Export. Für lokale
+Lesezugriffe brauchst du keinen API-Schlüssel.
+
+### VS-Code-Erweiterungen installieren
 
 1. In VS Code die Erweiterungsansicht öffnen (**Strg+Umschalt+X**).
    Im Menü **… → Install from VSIX…** die Datei
    `zotero-latex-assistant-0.5.0.vsix` auswählen.
-2. Zotero starten. Unter **Einstellungen → Erweitert** die Kommunikation mit
-   anderen Anwendungen auf diesem Computer erlauben.
+2. In der Erweiterungsansicht **LaTeX Workshop** von **James Yu** installieren,
+   wenn du LaTeX-Dateien in VS Code bauen und PDFs ansehen möchtest.
 3. Deinen LaTeX-Projektordner in VS Code öffnen und links auf das
    **Zotero-Buchsymbol** klicken.
 
-**Export:** Standardmäßig verwendet die Extension **Better BibTeX for Zotero**.
-Ist das Plugin nicht installiert, kannst du beim ersten Import oder Zitieren
-**Use Zotero export** wählen. Damit nutzt dieses Projekt den nativen
-Zotero-Export. Für lokale Lesezugriffe brauchst du keinen API-Schlüssel.
+[Installationshinweise für LaTeX Workshop](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install).
+
+### Nur bei KI-Nutzung: Node.js und KI-Client
+
+1. Eine aktuelle LTS-Version von [Node.js](https://nodejs.org/en/download)
+   installieren. Technisches Minimum für den gebündelten MCP-Server ist Node.js 20.
+   Im Terminal muss `node --version` eine passende Version ausgeben.
+2. Deinen gewünschten MCP-fähigen KI-Client installieren bzw. dessen Erweiterung
+   und Zugang einrichten. **Ein Client genügt**; du brauchst nicht Codex, Claude
+   und Cursor gemeinsam.
+3. Im Zotero-Zahnradmenü den passenden **Set up … MCP connection**-Befehl wählen
+   und die gewünschte `.cjs`-Serverdatei selbst auswählen.
+   [Vollständige MCP-Einrichtung](MCP-README.md).
+
+Für die Nutzung der fertigen VSIX musst du weder `npm install` ausführen noch
+Python, OCR-Software oder einen separaten PDF-Extraktor installieren.
 
 ### Projekt in drei Schritten einrichten
 
