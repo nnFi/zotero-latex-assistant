@@ -91,6 +91,35 @@ Die ersten drei Befehle sollen Versionsangaben ausgeben, die letzten drei
 Dateipfade. Für einen anderen Zitierstil müssen dessen `.bbx`- und `.cbx`-Dateien
 installiert sein. [TeX-Live-Grundpaket für Fedora](https://packages.fedoraproject.org/pkgs/texlive/texlive-scheme-basic/).
 
+### Wenn keine Zitierstile angezeigt werden
+
+Normalerweise findet die Extension installierte BibLaTeX-Stile automatisch.
+Du wählst sie unter **Zotero-Zahnrad → Change BibLaTeX citation style** aus;
+einen TeX-Pfad musst du nur einstellen, wenn die automatische Suche scheitert.
+
+1. Im VS-Code-Terminal `kpsewhich biblatex.sty` ausführen. Gibt der Befehl einen
+   Dateipfad aus, ist BibLaTeX für dieses Terminal auffindbar. Für einen Stil
+   müssen außerdem beide Dateien vorhanden sein, etwa `authoryear.bbx` und
+   `authoryear.cbx` aus den Prüfkommandos oben.
+2. Wird der Befehl nicht gefunden, die TeX-Installation und deren Programm-Pfad
+   prüfen; VS Code nach der Installation vollständig neu starten.
+3. Falls die Extension das Programm weiterhin nicht findet, die VS-Code-
+   **Einstellungen** öffnen und nach **`zoteroLatexAssistant.kpsewhichPath`** suchen.
+   Dort den vollständigen Pfad zur Programmdatei eintragen:
+   - **macOS mit MacTeX:** normalerweise `/Library/TeX/texbin/kpsewhich`.
+   - **Windows:** die Datei `kpsewhich.exe` im Programmordner deiner
+     TeX-Installation auswählen bzw. deren vollständigen Pfad kopieren.
+   - **Linux:** den vollständigen Programmpfad verwenden, beispielsweise
+     `/usr/bin/kpsewhich`.
+4. Die Zitierstilauswahl erneut öffnen. Fehlt nur ein bestimmter Stil, dessen
+   BibLaTeX-Paket über die TeX-Distribution nachinstallieren.
+
+Wenn das Terminal das Programm bereits findet, liefert `command -v kpsewhich`
+unter Linux/macOS bzw. `(Get-Command kpsewhich.exe).Source` in Windows-PowerShell
+den vollständigen Pfad. Den Pfad ohne zusätzliche Anführungszeichen in das
+Einstellungsfeld eintragen.
+[MacTeX-Programmpfad](https://www.tug.org/mactex/multipletexdistributions.html).
+
 ### Zotero und Better BibTeX einrichten
 
 1. Zotero Desktop installieren und starten. Unter **Einstellungen → Erweitert**
@@ -154,6 +183,12 @@ Du kannst diese Einstellungen auch in anderer Reihenfolge festlegen. Die
 Extension speichert sie für dein Projekt und ergänzt bei vollständigen
 LaTeX-Hauptdokumenten fehlende BibLaTeX-Einbindungen und die Literaturausgabe.
 Speichere offene Dateiänderungen vor der Einrichtung.
+
+Lokale Dateipfade werden unter Windows, macOS und Linux verarbeitet: Die
+`.bib` wählst du innerhalb deines Projekts aus, die MCP-Serverdatei über den
+Dateidialog. Bei PDF-Anhängen verwendet der MCP den von Zotero gemeldeten
+lokalen Speicherort. Die PDF muss auf diesem Rechner verfügbar und lesbar sein;
+es wird nicht die ganze Festplatte nach Dateien durchsucht.
 
 ---
 
@@ -223,7 +258,7 @@ vorhandene `.bib` übernehmen. Eine `.tex`-Datei ist dafür nicht erforderlich.
 | --- | --- |
 | **Zotero ist nicht erreichbar** | Zotero starten, die lokale API erlauben und **Zotero: Check connection** ausführen. |
 | **Import verlangt Better BibTeX** | Das Plugin aktivieren oder **Use Zotero export** auswählen, wenn die Option angeboten wird. |
-| **Kein Zitierstil wird angezeigt** | Prüfen, ob BibLaTeX und `kpsewhich` in deiner TeX-Installation verfügbar sind. |
+| **Kein Zitierstil wird angezeigt** | [TeX-Installation prüfen und bei Bedarf den Programmpfad einstellen](#wenn-keine-zitierstile-angezeigt-werden). |
 | **Eine Datei lässt sich nicht ändern** | Offene Änderungen speichern und den Vorgang erneut starten. |
 | **Du brauchst die Fehlermeldung** | **Ansicht → Ausgabe → Zotero LaTeX Assistant** öffnen. |
 
