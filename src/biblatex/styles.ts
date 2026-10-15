@@ -10,6 +10,12 @@ export interface BiblatexStyle {
   readonly citationFile: string;
 }
 export type TexLookup = (args: readonly string[], cwd: string) => Promise<string>;
+interface TexLookupOptions {
+  readonly platform?: NodeJS.Platform;
+  readonly execute?: (executable: string, args: readonly string[], options: {
+    cwd: string; timeout: number; maxBuffer: number;
+  }) => Promise<{ stdout: string }>;
+}
 
 export function validateBiblatexStyle(value: unknown): string {
   if (typeof value !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.+-]*$/.test(value)) {
@@ -19,16 +25,28 @@ export function validateBiblatexStyle(value: unknown): string {
 }
 
 /** kpsewhich only reads the local TeX installation; no shell or package installer. */
-export function localTexLookup(executable = "kpsewhich"): TexLookup {
+export function localTexLookup(executable = "kpsewhich", options: TexLookupOptions = {}): TexLookup {
+  const platform = options.platform ?? process.platform;
+  const run = options.execute ?? execute;
+  const fallback = platform === "darwin" && executable === "kpsewhich" ? "/Library/TeX/texbin/kpsewhich" : undefined;
+  let selected = executable;
   return async (args, cwd) => {
-    try {
-      return (await execute(executable, ["--progname=latex", ...args], { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 })).stdout;
-    } catch (error) {
-      // kpsewhich exits with the number of missing files in a batched lookup.
-      const failure = error as { code?: unknown; stdout?: string; stderr?: string; killed?: boolean };
-      if (typeof failure.code === "number" && failure.code > 0 && failure.code <= args.length
-        && !failure.killed && !failure.stderr && typeof failure.stdout === "string") return failure.stdout;
-      throw new Error("Cannot read the local TeX installation. Install/configure kpsewhich or set zoteroLatexAssistant.kpsewhichPath.");
+    for (;;) {
+      try {
+        return (await run(selected, ["--progname=latex", ...args], { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 })).stdout;
+      } catch (error) {
+        // GUI-launched VS Code may not inherit MacTeX's PATH. Only try the
+        // standard installation when the default command itself is missing.
+        const failure = error as { code?: unknown; stdout?: string; stderr?: string; killed?: boolean };
+        if (failure.code === "ENOENT" && fallback && selected !== fallback) {
+          selected = fallback;
+          continue;
+        }
+        // kpsewhich exits with the number of missing files in a batched lookup.
+        if (typeof failure.code === "number" && failure.code > 0 && failure.code <= args.length
+          && !failure.killed && !failure.stderr && typeof failure.stdout === "string") return failure.stdout;
+        throw new Error("Cannot read the local TeX installation. Install/configure kpsewhich or set zoteroLatexAssistant.kpsewhichPath.");
+      }
     }
   };
 }

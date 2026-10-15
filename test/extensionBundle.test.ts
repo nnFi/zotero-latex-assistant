@@ -102,6 +102,7 @@ test("packaged extension renders its source list and applies styles only to acti
   });
   runInNewContext(await readFile(filename, "utf8"), {
     module, exports: module.exports, __dirname: dist, __filename: filename, Buffer, Error, URL, URLSearchParams, Headers, Response, AbortSignal, fetch: localFetch,
+    process: { platform: process.platform },
     require: (name: string) => {
       if (name === "vscode") return fakeVscode;
       assert(name.startsWith("node:"), `Packaged extension must not depend on source files or node_modules: ${name}`);

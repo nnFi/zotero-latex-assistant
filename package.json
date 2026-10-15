@@ -299,7 +299,7 @@
           "type": "string",
           "default": "kpsewhich",
           "scope": "machine",
-          "description": "Executable name or absolute path to kpsewhich from the locally installed TeX distribution. Used to discover BibLaTeX styles; nothing is downloaded."
+          "description": "Executable name or absolute path to kpsewhich from the locally installed TeX distribution. On macOS, the default also tries /Library/TeX/texbin/kpsewhich when the command is not found. An explicitly configured path takes precedence. Used to discover BibLaTeX styles; nothing is downloaded."
         },
         "zoteroLatexAssistant.bibliographyExporter": {
           "type": "string",

@@ -38,6 +38,74 @@ test("Missing local TeX/BibLaTeX reports a useful error without a download fallb
   await assert.rejects(localTexLookup(path.join(tmpdir(), "nonexistent-kpsewhich"))(["biblatex.sty"], tmpdir()), /kpsewhichPath/);
 });
 
+test("macOS uses the standard MacTeX executable when the default command is missing and reuses it", async () => {
+  const calls: string[] = [];
+  const cwd = path.join(tmpdir(), "project with spaces");
+  const lookup = localTexLookup("kpsewhich", { platform: "darwin", execute: async (executable, args, options) => {
+    calls.push(executable);
+    assert.equal(options.cwd, cwd);
+    assert.equal(options.timeout, 15000);
+    assert.equal(options.maxBuffer, 8 * 1024 * 1024);
+    assert.equal(args[0], "--progname=latex");
+    if (executable === "kpsewhich") throw Object.assign(new Error("not found"), { code: "ENOENT" });
+    return { stdout: args.slice(1).join("\n") };
+  } });
+  assert.equal(await lookup(["biblatex.sty"], cwd), "biblatex.sty");
+  assert.equal(await lookup(["authoryear.bbx", "authoryear.cbx"], cwd), "authoryear.bbx\nauthoryear.cbx");
+  assert.deepEqual(calls, ["kpsewhich", "/Library/TeX/texbin/kpsewhich", "/Library/TeX/texbin/kpsewhich"]);
+});
+
+test("A working default TeX command on macOS takes precedence over MacTeX's standard path", async () => {
+  const calls: string[] = [];
+  const lookup = localTexLookup("kpsewhich", { platform: "darwin", execute: async (executable) => {
+    calls.push(executable);
+    return { stdout: "configured TeX installation" };
+  } });
+  assert.equal(await lookup(["biblatex.sty"], tmpdir()), "configured TeX installation");
+  assert.deepEqual(calls, ["kpsewhich"]);
+});
+
+test("Linux, Windows and explicitly configured TeX executables never switch to MacTeX", async (t) => {
+  for (const [platform, executable] of [["linux", "kpsewhich"], ["win32", "kpsewhich"],
+    ["darwin", "/custom TeX/bin/kpsewhich"]] as const) {
+    await t.test(`${platform}: ${executable}`, async () => {
+      const calls: string[] = [];
+      const lookup = localTexLookup(executable, { platform, execute: async (command) => {
+        calls.push(command);
+        throw Object.assign(new Error("not found"), { code: "ENOENT" });
+      } });
+      await assert.rejects(lookup(["biblatex.sty"], tmpdir()), /kpsewhichPath/);
+      assert.deepEqual(calls, [executable]);
+    });
+  }
+});
+
+test("Missing MacTeX reports an error after two attempts without repeatedly retrying", async () => {
+  const calls: string[] = [];
+  const lookup = localTexLookup("kpsewhich", { platform: "darwin", execute: async (command) => {
+    calls.push(command);
+    throw Object.assign(new Error("not found"), { code: "ENOENT" });
+  } });
+  await assert.rejects(lookup(["biblatex.sty"], tmpdir()), /kpsewhichPath/);
+  assert.deepEqual(calls, ["kpsewhich", "/Library/TeX/texbin/kpsewhich"]);
+});
+
+test("macOS preserves missing-file results and does not hide permission, timeout or execution failures", async (t) => {
+  for (const failure of [{ code: 1, stdout: "", stderr: "" }, { code: 1, stdout: "found.bbx\n", stderr: "" },
+    { code: "EACCES" }, { code: "ETIMEDOUT", killed: true }, { code: 1, stdout: "", stderr: "TeX failed" }]) {
+    await t.test(JSON.stringify(failure), async () => {
+      const calls: string[] = [];
+      const lookup = localTexLookup("kpsewhich", { platform: "darwin", execute: async (command) => {
+        calls.push(command);
+        throw Object.assign(new Error("lookup failed"), failure);
+      } });
+      if ("stdout" in failure && !failure.stderr) assert.equal(await lookup(["missing.cbx"], tmpdir()), failure.stdout);
+      else await assert.rejects(lookup(["biblatex.sty"], tmpdir()), /kpsewhichPath/);
+      assert.deepEqual(calls, ["kpsewhich"]);
+    });
+  }
+});
+
 test("Style changes update every declaration and remove conflicting split style options", () => {
   const original = "\\usepackage[backend=biber,bibstyle=numeric,citestyle=verbose,sorting={nyt},style=old]{biblatex}\n\\addbibresource{refs.bib}\n\\autocite[14]{original}\n\\printbibliography\n";
   const changes = planBiblatexStyle([{ path: "main.tex", text: original },

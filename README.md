@@ -74,6 +74,13 @@ Autor-Jahr-Stil.
 - **Andere Linux-Systeme / Windows:** [TeX Live installieren](https://tug.org/texlive/quickinstall.html).
 - **macOS:** [MacTeX installieren](https://www.tug.org/mactex/).
 
+**Windows mit MiKTeX:** Wenn du statt TeX Live MiKTeX verwendest, zusätzlich
+[Strawberry Perl](https://strawberryperl.com/) installieren. MiKTeX liefert Perl
+nicht mit; `latexmk` benötigt es für den üblichen PDF-Build mit LaTeX Workshop.
+Nach der Installation VS Code vollständig neu starten und im VS-Code-Terminal
+`perl --version` sowie `latexmk -v` prüfen.
+[Hinweise von LaTeX Workshop](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install).
+
 Zusätzliche Schriften, Sprach- oder Stilpakete hängen von deiner Dokumentvorlage ab.
 Nach der Installation müssen die Programme im Terminal von VS Code erreichbar sein.
 VS Code gegebenenfalls neu starten. Prüfen mit:
@@ -94,6 +101,10 @@ installiert sein. [TeX-Live-Grundpaket für Fedora](https://packages.fedoraproje
 ### Wenn keine Zitierstile angezeigt werden
 
 Normalerweise findet die Extension installierte BibLaTeX-Stile automatisch.
+Unter macOS versucht sie zusätzlich `/Library/TeX/texbin/kpsewhich`, wenn der
+Standardbefehl `kpsewhich` nicht gefunden wird. Ein ausdrücklich eingestellter
+Programmpfad hat Vorrang. Diese Erkennung gilt für die Zitierstilauswahl;
+zum PDF-Bauen muss auch LaTeX Workshop die TeX-Programme erreichen können.
 Du wählst sie unter **Zotero-Zahnrad → Change BibLaTeX citation style** aus;
 einen TeX-Pfad musst du nur einstellen, wenn die automatische Suche scheitert.
 
@@ -106,7 +117,8 @@ einen TeX-Pfad musst du nur einstellen, wenn die automatische Suche scheitert.
 3. Falls die Extension das Programm weiterhin nicht findet, die VS-Code-
    **Einstellungen** öffnen und nach **`zoteroLatexAssistant.kpsewhichPath`** suchen.
    Dort den vollständigen Pfad zur Programmdatei eintragen:
-   - **macOS mit MacTeX:** normalerweise `/Library/TeX/texbin/kpsewhich`.
+   - **macOS mit MacTeX:** normalerweise `/Library/TeX/texbin/kpsewhich`;
+     dieser Standardpfad wird bei automatischer Suche bereits versucht.
    - **Windows:** die Datei `kpsewhich.exe` im Programmordner deiner
      TeX-Installation auswählen bzw. deren vollständigen Pfad kopieren.
    - **Linux:** den vollständigen Programmpfad verwenden, beispielsweise
