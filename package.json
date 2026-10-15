@@ -36,7 +36,7 @@
     "test": "npm run compile && node --test dist/test/*.test.js",
     "test:live": "npm run compile && node scripts/live-smoke.cjs",
     "vscode:prepublish": "npm run compile",
-    "package": "npm run compile && vsce package --no-dependencies --allow-missing-repository --no-rewrite-relative-links --skip-license",
+    "package": "npm run compile && node scripts/extension-readme.cjs && vsce package --no-dependencies --readme-path dist/extension-readme.md --allow-missing-repository --skip-license",
     "test:mcp:live": "npm run compile && node scripts/mcp-smoke.cjs"
   },
   "contributes": {

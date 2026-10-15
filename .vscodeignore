@@ -18,6 +18,7 @@ docs/**
 **/*.log
 .env*
 dist/src/**
+README.md
 !docs/MCP.md
 !docs/RESEARCH_WORKFLOW.md
 !docs/mcp-smoke-report.json
