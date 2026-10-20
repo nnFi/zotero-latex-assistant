@@ -1,4 +1,6 @@
 .vscode/**
+*.vsix
+AGENTS.md
 .agents/**
 .codex/**
 .aws/**

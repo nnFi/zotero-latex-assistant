@@ -168,7 +168,8 @@ Lesezugriffe brauchst du keinen API-Schlüssel.
 
 1. In VS Code die Erweiterungsansicht öffnen (**Strg+Umschalt+X**).
    Im Menü **… → Install from VSIX…** die Datei
-   `zotero-latex-assistant-0.5.0.vsix` auswählen.
+   `zotero-latex-assistant-latest.vsix` auswählen. Diese Datei liegt immer als
+   aktuelle installierbare Version im Repository.
 2. In der Erweiterungsansicht **LaTeX Workshop** von **James Yu** installieren,
    wenn du LaTeX-Dateien in VS Code bauen und PDFs ansehen möchtest.
 3. Deinen LaTeX-Projektordner in VS Code öffnen und links auf das

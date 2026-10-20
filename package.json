@@ -36,7 +36,7 @@
     "test": "npm run compile && node --test dist/test/*.test.js",
     "test:live": "npm run compile && node scripts/live-smoke.cjs",
     "vscode:prepublish": "npm run compile",
-    "package": "npm run compile && node scripts/extension-readme.cjs && vsce package --no-dependencies --readme-path dist/extension-readme.md --allow-missing-repository --skip-license",
+    "package": "npm run compile && node scripts/extension-readme.cjs && vsce package --no-dependencies --readme-path dist/extension-readme.md --allow-missing-repository --skip-license --out zotero-latex-assistant-latest.vsix",
     "test:mcp:live": "npm run compile && node scripts/mcp-smoke.cjs",
     "test:tikz:live": "npm run compile && node scripts/tikz-smoke.cjs"
   },

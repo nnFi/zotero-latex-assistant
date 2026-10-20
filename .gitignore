@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.vsix
+!zotero-latex-assistant-latest.vsix
 *.log
 .env
 .env.*
