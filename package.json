@@ -3,7 +3,7 @@
   "displayName": "Zotero LaTeX Assistant",
   "description": "Local Zotero integration for academic writing with LaTeX in VS Code.",
   "icon": "media/icon.png",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "publisher": "local",
   "private": true,
   "type": "commonjs",
@@ -168,6 +168,11 @@
         "command": "zoteroLatexAssistant.setupCursor",
         "title": "Set up Cursor MCP connection",
         "category": "Zotero"
+      },
+      {
+        "command": "zoteroLatexAssistant.setupVSCode",
+        "title": "Set up VS Code / Copilot MCP connection",
+        "category": "Zotero"
       }
     ],
     "menus": {
@@ -320,7 +325,7 @@
           "type": "string",
           "default": "node",
           "scope": "machine",
-          "description": "Node.js 20+ executable used by Codex and Claude to start the bundled Zotero MCP server."
+          "description": "Node.js 20+ executable used by VS Code / Copilot, Codex, Claude and Cursor to start the selected Zotero MCP server."
         }
       }
     },
@@ -341,6 +346,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
+    "jsonc-parser": "3.3.1",
     "smol-toml": "1.9.1",
     "zod": "4.6.6"
   }

@@ -36,7 +36,7 @@ __export(server_exports, {
 module.exports = __toCommonJS(server_exports);
 
 // src/shared/version.ts
-var APP_VERSION = "0.7.1";
+var APP_VERSION = "0.7.2";
 
 // node_modules/@modelcontextprotocol/server/dist/chunk-Br0eD_fh.mjs
 var __create2 = Object.create;

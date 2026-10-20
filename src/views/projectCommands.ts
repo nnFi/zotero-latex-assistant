@@ -26,6 +26,7 @@ import { isImportableItem } from "../biblatex/selection";
 import { ZoteroError } from "../shared/errors";
 import { citationDeletionPreview, planCitationDeletion, planTexCitationRemoval } from "../biblatex/deletion";
 import { planCollectionChange } from "../biblatex/collectionChange";
+import { mcpSetupOptions } from "./mcpSetupOptions";
 
 interface TreeSelection {
   readonly data?: { readonly kind: string; readonly library?: LibraryRef; readonly collection?: ZoteroCollection; readonly item?: ZoteroItem };
@@ -306,9 +307,7 @@ export class ProjectController {
   private async configure(): Promise<void> {
     const choice = await vscode.window.showQuickPick([
       { label: "Set library", command: "connectProject" },
-      { label: "Set up Codex MCP connection", description: "Connect this project to Codex", command: "setupCodex" },
-      { label: "Set up Claude MCP connection", description: "Connect this project to Claude Code", command: "setupClaude" },
-      { label: "Set up Cursor MCP connection", description: "Connect this project to Cursor", command: "setupCursor" },
+      ...mcpSetupOptions.map(({ command, label }) => ({ label: `Set up ${label} MCP connection`, command })),
       { label: "Set .bib file", command: "selectBibFile" },
       { label: "Change citation style", command: "selectCitationStyle" },
       { label: "Update .bib manually", command: "updateBib" },

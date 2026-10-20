@@ -557,13 +557,9 @@ Notizinhalt/Normalisierung und `deleted` folgen dem
 
 ## Voraussetzungen und Einrichtung
 
-Die Einrichtungsaktionen stehen sowohl in der Befehlspalette als auch im
-Zahnrad-Menü der Zotero-Seitenleiste (**Configure project**):
-**Set up Codex MCP connection** und **Set up Claude MCP connection**.
-**Set up Cursor MCP connection** richtet Cursor im aktuellen Projekt ein.
-Alle drei Aktionen verlangen die ausdrückliche Auswahl einer vorhandenen,
-lesbaren lokalen `.cjs`-Serverdatei. Der Installationspfad des gebündelten Servers
-wird nicht automatisch übernommen oder im Dateidialog vorbelegt. Abbruch verändert
+Die **Set up … MCP connection**-Befehle für VS Code / Copilot, Codex, Claude und
+Cursor stehen in der Befehlspalette und im Zotero-Zahnradmenü (**Configure project**).
+Wähle im Dateidialog eine vorhandene lokale `.cjs`-Serverdatei. Abbruch verändert
 keine Konfiguration. Offene, ungespeicherte MCP-Konfigurationen zuerst speichern.
 
 - Node.js 20 oder neuer auf derselben Maschine wie Zotero; bei Bedarf den absoluten
@@ -578,6 +574,22 @@ keine Konfiguration. Offene, ungespeicherte MCP-Konfigurationen zuerst speichern
 - Ein VSIX über `npm ci && npm run package` bauen und installieren oder mit F5 den
   Extension Development Host starten. Das Paket enthält `dist/mcp/server.cjs`
   einschließlich seiner Laufzeitabhängigkeiten. Der Rechner benötigt kein globales MCP-SDK.
+
+### VS Code / Copilot über die Erweiterung einrichten
+
+[Einrichtung und erster Verbindungstest](../MCP-README.md#vs-code-mit-copilot).
+
+Der Befehl schreibt `servers.zotero_latex_assistant` in **`.vscode/mcp.json`**
+des gewählten Projektordners. Der absolute Projektpfad wird als `--project`
+übergeben; Node-Pfad, API-URL und Timeout kommen aus den Einstellungen.
+Das Format unterstützt Kommentare und nachgestellte Kommas. Andere Server,
+Eingabevariablen und zusätzliche Einstellungen bleiben erhalten.
+
+Aktualisierbar sind Einträge für dasselbe Projekt, mit `${workspaceFolder}` als
+Projektargument oder ohne Projektbindung mit derselben ausgewählten Serverdatei.
+Fremde Projektbindungen, Remote-Server, Syntaxfehler und doppelte JSON-Schlüssel
+führen zum Abbruch. Der Befehl verändert nur die Projektkonfiguration.
+Quelle: [VS-Code-MCP-Konfiguration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
 
 ### Codex-Erweiterung in VS Code
 

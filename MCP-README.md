@@ -50,6 +50,23 @@ ohne laufendes Zotero prüfen.
 Diese Einrichtung gilt für den **Copilot-Chat**. Für den Codex-Chat den nächsten
 Abschnitt verwenden.
 
+### Über die Zotero-Erweiterung (ab Version 0.7.2)
+
+1. Das Schreibprojekt öffnen und **Zotero: Set up VS Code / Copilot MCP connection**
+   in der Befehlspalette oder im Zotero-Zahnradmenü wählen.
+2. Die lokale `.cjs`-Serverdatei auswählen, etwa `mcp-latest.cjs` aus diesem Repository.
+3. Die Erweiterung öffnet die fertige **`.vscode/mcp.json`** im gewählten Projekt.
+4. **MCP: List Servers → zotero_latex_assistant → Start / Restart** wählen
+   und eine angezeigte Vertrauensabfrage bestätigen.
+5. Zotero starten, im **Copilot-Chat den Agent-Modus** wählen und die
+   Zotero-Werkzeuge aktivieren. Zum Prüfen schreiben:
+
+   > Prüfe mit zotero_get_context die Verbindung und zeige mir meine Bibliotheken und Sammlungen.
+
+Node.js 20+ muss installiert sein. Bei Bedarf unter `zoteroLatexAssistant.nodePath`
+den vollständigen Node-Pfad setzen. Eine offene, ungespeicherte MCP-Konfiguration
+zuerst speichern. Details zum [Konfigurationsverhalten](docs/MCP.md#vs-code--copilot-über-die-erweiterung-einrichten).
+
 ### Schritt für Schritt durch „MCP: Add Server“
 
 1. **Strg+Umschalt+P** drücken, **MCP: Add Server** auswählen und **Enter** drücken.
@@ -115,7 +132,8 @@ der Zotero-Seitenleiste. Nach dem Aufruf **die gewünschte `.cjs`-Serverdatei se
 auswählen**. Es wird kein Pfad vorbelegt oder aus der Erweiterungsinstallation
 automatisch übernommen. Danach richtet der Befehl die Verbindung für den
 ausgewählten Projektordner ein. Bei Abbruch bleibt die Konfiguration unverändert.
-Dasselbe gilt für **Set up Claude MCP connection** und **Set up Cursor MCP connection**.
+Dasselbe gilt für **Set up Claude MCP connection**, **Set up Cursor MCP connection**
+und **Set up VS Code / Copilot MCP connection**.
 
 Für die manuelle, projektübergreifende Einrichtung folgenden Abschnitt in
 `/home/finn/.codex/config.toml` ergänzen bzw. einen gleichnamigen Abschnitt aktualisieren:

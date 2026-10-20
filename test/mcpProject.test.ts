@@ -6,7 +6,8 @@ import * as path from "node:path";
 import { newProjectConfig, saveProjectConfig, readProjectText, parseProjectConfig, CONFIG_FILE } from "../src/config/project";
 import { ZoteroProjectService } from "../src/zotero/projectService";
 import { metadataSchema, metadataUpdateSchema } from "../src/zotero/metadata";
-import { codexConfig, claudeConfig, cursorConfig, mcpLaunch, configureMcp } from "../src/config/mcp";
+import { codexConfig, claudeConfig, cursorConfig, vscodeConfig, mcpLaunch, configureMcp } from "../src/config/mcp";
+import { parse as parseJsonc } from "jsonc-parser";
 import { ZoteroError } from "../src/shared/errors";
 import { parse } from "smol-toml";
 
@@ -545,6 +546,68 @@ test("Codex, Claude and Cursor configuration preserve unrelated servers, escapin
   ]) assert.throws(() => cursorConfig(JSON.stringify({ mcpServers: { zotero_latex_assistant: entry } }), launch), /unrelated/);
 });
 
+
+test("VS Code setup preserves JSONC, other servers and project scope; conflicts leave the file unchanged", async (t) => {
+  const f = await fixture(t);
+  const launch = mcpLaunch(f.root, path.join(f.root, 'server "quoted".cjs'), "/node with spaces/node", "http://localhost:23119/api/", 5000);
+  const before = `{
+  // Keep this comment and the other server.
+  "inputs": [{ "id": "token", "type": "promptString" }],
+  "servers": {
+    "other": { "type": "http", "url": "https://example.com" },
+  },
+}\n`;
+  const next = vscodeConfig(before, launch);
+  const parsed = parseJsonc(next);
+  assert(next.includes("// Keep this comment and the other server."));
+  assert.deepEqual(parsed.inputs, parseJsonc(before).inputs);
+  assert.deepEqual(parsed.servers.other, parseJsonc(before).servers.other);
+  assert.deepEqual(parsed.servers.zotero_latex_assistant, { type: "stdio", ...launch });
+  assert.equal(vscodeConfig(next, launch), next);
+  assert.deepEqual(JSON.parse(vscodeConfig(undefined, launch)).servers.zotero_latex_assistant, { type: "stdio", ...launch });
+  const variable = `{"servers":{"zotero_latex_assistant":{
+    // Keep custom settings.
+    "type":"stdio","command":"node","args":["old.cjs","--project","\${workspaceFolder}"],
+    "env":{"EXTRA":"keep"},"sandboxEnabled":true
+  }}}`;
+  const updated = vscodeConfig(variable, launch);
+  assert(updated.includes("// Keep custom settings."));
+  assert.deepEqual(parseJsonc(updated).servers.zotero_latex_assistant.env, { EXTRA: "keep" });
+  assert.equal(parseJsonc(updated).servers.zotero_latex_assistant.sandboxEnabled, true);
+  assert.deepEqual(parseJsonc(updated).servers.zotero_latex_assistant.args, launch.args);
+  const standalone = JSON.stringify({ servers: { zotero_latex_assistant: { command: "node", args: [launch.args[0]] } } });
+  assert.deepEqual(parseJsonc(vscodeConfig(standalone, launch)).servers.zotero_latex_assistant.args, launch.args);
+  const file = ".vscode/mcp.json";
+  assert.equal(await configureMcp(f.root, "vscode", launch), file);
+  for (const invalid of [
+    '{"servers":', '{"servers":[]}', 'null', '{"servers":{}, broken}',
+    ...[{ command: "other" }, { command: "node", args: [launch.args[0], "--project", "/other/project"] },
+      { type: "http", url: "https://example.com", args: ["--project", f.root] }]
+      .map((entry) => JSON.stringify({ servers: { zotero_latex_assistant: entry } })),
+  ]) {
+    await writeFile(path.join(f.root, file), invalid);
+    await assert.rejects(configureMcp(f.root, "vscode", launch), /Invalid VS Code|unrelated/);
+    assert.equal(await readProjectText(f.root, file), invalid);
+  }
+});
+
+test("VS Code setup rejects duplicate JSON keys without changing the file", async (t) => {
+  const f = await fixture(t);
+  const launch = mcpLaunch(f.root, path.join(f.root, "selected.cjs"), "node", "http://localhost:23119/api/", 5000);
+  const related = JSON.stringify({ type: "stdio", ...launch });
+  const unrelated = JSON.stringify({ command: "custom", args: ["/other.cjs", "--project", "/other/project"] });
+  const file = ".vscode/mcp.json";
+  await configureMcp(f.root, "vscode", launch);
+  for (const duplicate of [
+    `{"servers":{"zotero_latex_assistant":${unrelated}},"servers":{"zotero_latex_assistant":${related}}}`,
+    `{"servers":{"zotero_latex_assistant":${unrelated},"zotero_latex_assistant":${related}}}`,
+    `{"servers":{"zotero_latex_assistant":{"command":"custom",${related.slice(1, -1)}}}}`,
+  ]) {
+    await writeFile(path.join(f.root, file), duplicate);
+    await assert.rejects(configureMcp(f.root, "vscode", launch), /Duplicate property/);
+    assert.equal(await readProjectText(f.root, file), duplicate);
+  }
+});
 
 test("partial source updates preserve omitted fields, collections, relations and project citation keys", async (t) => {
   const f = await fixture(t); f.seed("ITEM2345", { extra: "Citation Key: stable2026", collections: [collection, "OTHER234"], relations: { related: "keep" }, tags: [{ tag: "existing", type: 1 }] });

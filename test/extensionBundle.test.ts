@@ -38,7 +38,7 @@ test("packaged extension renders its source list and applies styles only to acti
   const panels: { disposed: boolean; webview: { html: string }; dispose(): void }[] = [];
   const selectedServer = path.join(root, "manual server \"chosen\".cjs");
   await writeFile(selectedServer, "// Explicitly chosen file; setup must not execute it.\n");
-  const mcpUi = { selection: selectedServer as string | undefined, scheme: "file", chooseCursorMenu: false,
+  const mcpUi = { selection: selectedServer as string | undefined, scheme: "file", menuCommand: "",
     dialogs: [] as { title: string; defaultUri?: unknown; canSelectFiles: boolean; canSelectFolders: boolean; canSelectMany: boolean }[],
     opened: [] as string[], menus: [] as { label: string; command: string }[][] };
   const textDocuments: { uri: ReturnType<typeof uri>; isDirty: boolean }[] = [];
@@ -62,7 +62,7 @@ test("packaged extension renders its source list and applies styles only to acti
       showQuickPick: async (entries: { label: string; command?: string }[]) => {
         if (entries.some((entry) => entry.command === "setupCursor")) {
           mcpUi.menus.push(entries as { label: string; command: string }[]);
-          if (mcpUi.chooseCursorMenu) return entries.find((entry) => entry.command === "setupCursor");
+          if (mcpUi.menuCommand) return entries.find((entry) => entry.command === mcpUi.menuCommand);
         }
         return entries[0];
       }, showInformationMessage() {},
@@ -156,26 +156,36 @@ Text
 
   const manifest = JSON.parse(await readFile(path.resolve(__dirname, "../../package.json"), "utf8"));
   assert.equal(manifest.version, APP_VERSION);
-  assert(manifest.contributes.commands.some((entry: { command: string }) => entry.command === "zoteroLatexAssistant.setupCursor"));
-  const targets = { Codex: ".codex/config.toml", Claude: ".mcp.json", Cursor: ".cursor/mcp.json" };
+  const targets = { Codex: ".codex/config.toml", Claude: ".mcp.json", Cursor: ".cursor/mcp.json", VSCode: ".vscode/mcp.json" };
   for (const [client, file] of Object.entries(targets)) {
+    assert(manifest.contributes.commands.some((entry: { command: string }) => entry.command === `zoteroLatexAssistant.setup${client}`));
     assert(commands.has(`zoteroLatexAssistant.setup${client}`));
     await commands.get(`zoteroLatexAssistant.setup${client}`)!();
     assert.deepEqual(errors, []);
     const text = await readFile(path.join(projectRoot, file), "utf8");
-    const config = client === "Codex" ? parseToml(text).mcp_servers as Record<string, { args: string[] }> : JSON.parse(text).mcpServers;
+    const config = client === "Codex" ? parseToml(text).mcp_servers as Record<string, { args: string[] }>
+      : client === "VSCode" ? JSON.parse(text).servers : JSON.parse(text).mcpServers;
     assert.equal(config.zotero_latex_assistant.args[0], selectedServer);
     assert.equal(config.zotero_latex_assistant.args[2], projectRoot);
     const options = mcpUi.dialogs.at(-1)!;
     assert.equal(options.defaultUri, undefined, "No bundled server path may be selected by default");
     assert.equal(options.canSelectFiles, true); assert.equal(options.canSelectFolders, false); assert.equal(options.canSelectMany, false);
-    assert(options.title.includes(client)); assert(mcpUi.opened.includes(path.join(projectRoot, file)));
+    assert(options.title.includes(client === "VSCode" ? "VS Code / Copilot" : client));
+    assert(mcpUi.opened.includes(path.join(projectRoot, file)));
   }
-  mcpUi.chooseCursorMenu = true;
-  await commands.get("zoteroLatexAssistant.configureProject")!();
-  assert(mcpUi.menus.at(-1)!.some((entry) => entry.command === "setupCursor"));
-  assert.deepEqual(errors, []);
-  mcpUi.chooseCursorMenu = false;
+  for (const command of ["setupCursor", "setupVSCode"]) {
+    mcpUi.menuCommand = command;
+    const dialogsBefore = mcpUi.dialogs.length;
+    await commands.get("zoteroLatexAssistant.configureProject")!();
+    assert(mcpUi.menus.at(-1)!.some((entry) => entry.command === command));
+    for (const entry of mcpUi.menus.at(-1)!.filter((entry) => entry.command.startsWith("setup"))) {
+      const contributed = manifest.contributes.commands.find((item: { command: string }) => item.command === `zoteroLatexAssistant.${entry.command}`);
+      assert.equal(entry.label, contributed?.title);
+    }
+    assert.equal(mcpUi.dialogs.length, dialogsBefore + 1);
+    assert.deepEqual(errors, []);
+  }
+  mcpUi.menuCommand = "";
   mcpUi.selection = undefined;
   const opened = mcpUi.opened.length;
   for (const [client, file] of Object.entries(targets)) {
@@ -201,4 +211,9 @@ Text
   await commands.get("zoteroLatexAssistant.setupCursor")!();
   assert.equal(errors.length, 5); assert.match(errors.at(-1)!, /Save the open MCP configuration/);
   assert.equal(await readFile(path.join(projectRoot, targets.Cursor), "utf8"), cursorBefore);
+  const vscodeBefore = await readFile(path.join(projectRoot, targets.VSCode), "utf8");
+  textDocuments.push({ uri: uri(path.join(projectRoot, targets.VSCode)), isDirty: true });
+  await commands.get("zoteroLatexAssistant.setupVSCode")!();
+  assert.equal(errors.length, 6); assert.match(errors.at(-1)!, /Save the open MCP configuration/);
+  assert.equal(await readFile(path.join(projectRoot, targets.VSCode), "utf8"), vscodeBefore);
 });

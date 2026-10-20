@@ -17,7 +17,7 @@ Serverdatei finden, Startangaben und Konfiguration zum Kopieren.
 | **Bibliografie einrichten** | Bibliothek, `.bib`-Datei und einen lokal installierten BibLaTeX-Stil unabhängig auswählen. |
 | **Literaturdaten aktualisieren** | Änderungen aus Zotero ausdrücklich in die Projektbibliografie übernehmen; Zitier-Schlüssel bleiben stabil. |
 | **DOI und Titel suchen** | Publikationen über Crossref finden, Metadaten ansehen und die DOI kopieren. |
-| **Mit KI arbeiten · optional** | Codex oder Claude über den lokalen MCP-Server mit Recherche, Quellennotizen und PDF-Weitergabe verbinden. |
+| **Mit KI arbeiten · optional** | VS Code / Copilot, Codex, Claude oder Cursor über den lokalen MCP-Server mit Recherche, Quellennotizen und PDF-Weitergabe verbinden. |
 | **TikZ-Grafiken mit KI erstellen** | Eine Bildvorlage im KI-Chat beschreiben lassen und den erzeugten TikZ-Code über `tikz_render` prüfen. Der MCP legt `figures/` automatisch an und liefert PDF und PNG-Vorschau. |
 
 Quellen und Anhänge bearbeitest du wie gewohnt in Zotero. **Open in Zotero**
@@ -253,12 +253,14 @@ Fehlt die Quelle in deiner `.bib`, wird sie beim Zitieren übernommen.
 
 ### KI-Unterstützung einrichten · optional
 
-Im Zahnradmenü **Set up Codex MCP connection**, **Set up Claude MCP connection**
-oder **Set up Cursor MCP connection** wählen. Danach die gewünschte **`.cjs`-Serverdatei
-selbst auswählen**. Diese Dateiauswahl ist für alle drei Einrichtungsbefehle
-verpflichtend; die Erweiterung setzt keinen gebündelten Serverpfad automatisch ein.
-Für den lokalen MCP-Server brauchst du zusätzlich **Node.js ab Version 20**.
-Cursor erhält die Verbindung im Projekt unter `.cursor/mcp.json`.
+Im Zahnradmenü den passenden **Set up … MCP connection**-Befehl für
+VS Code / Copilot, Codex, Claude oder Cursor wählen. Im Dateidialog die lokale
+`.cjs`-Serverdatei auswählen, etwa `mcp-latest.cjs` aus diesem Repository.
+Voraussetzung ist **Node.js ab Version 20**.
+
+Für Copilot: Über **MCP: List Servers** den Server `zotero_latex_assistant` starten,
+im Chat den **Agent-Modus** wählen und die Zotero-Werkzeuge aktivieren.
+[Schritt-für-Schritt-Anleitung](MCP-README.md#vs-code-mit-copilot).
 
 Der Agent kann unter anderem Quellen recherchieren, Notizen bearbeiten,
 Literatur über DOI oder ISBN übernehmen und PDFs erhalten. Mit

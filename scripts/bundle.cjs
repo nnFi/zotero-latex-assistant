@@ -1,6 +1,8 @@
 const { build } = require("esbuild");
 const { copyFile } = require("node:fs/promises");
-const options = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true };
+// jsonc-parser's UMD entry contains dynamic requires; bundle its ESM entry instead.
+const options = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true,
+  alias: { "jsonc-parser": require.resolve("jsonc-parser/lib/esm/main.js") } };
 const entries = [
   { ...options, entryPoints: ["mcp/server.ts"], outfile: "dist/mcp/server.cjs", metafile: true },
   { ...options, entryPoints: ["src/extension.ts"], outfile: "dist/extension.cjs", external: ["vscode"] },
