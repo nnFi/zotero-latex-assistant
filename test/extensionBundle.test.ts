@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { parse as parseToml } from "smol-toml";
 import { CONFIG_FILE, newProjectConfig, readProjectConfig, saveProjectConfig } from "../src/config/project";
 import { withProjectWriteLock } from "../src/config/projectLock";
+import { APP_VERSION } from "../src/shared/version";
 
 test("packaged extension renders its source list and applies styles only to active TeX commands", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "zotero-extension-bundle-"));
@@ -154,7 +155,7 @@ Text
   errors.length = 0;
 
   const manifest = JSON.parse(await readFile(path.resolve(__dirname, "../../package.json"), "utf8"));
-  assert.equal(manifest.version, "0.5.0");
+  assert.equal(manifest.version, APP_VERSION);
   assert(manifest.contributes.commands.some((entry: { command: string }) => entry.command === "zoteroLatexAssistant.setupCursor"));
   const targets = { Codex: ".codex/config.toml", Claude: ".mcp.json", Cursor: ".cursor/mcp.json" };
   for (const [client, file] of Object.entries(targets)) {

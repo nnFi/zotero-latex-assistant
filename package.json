@@ -3,7 +3,7 @@
   "displayName": "Zotero LaTeX Assistant",
   "description": "Local Zotero integration for academic writing with LaTeX in VS Code.",
   "icon": "media/icon.png",
-  "version": "0.5.0",
+  "version": "0.7.1",
   "publisher": "local",
   "private": true,
   "type": "commonjs",
@@ -37,7 +37,8 @@
     "test:live": "npm run compile && node scripts/live-smoke.cjs",
     "vscode:prepublish": "npm run compile",
     "package": "npm run compile && node scripts/extension-readme.cjs && vsce package --no-dependencies --readme-path dist/extension-readme.md --allow-missing-repository --skip-license",
-    "test:mcp:live": "npm run compile && node scripts/mcp-smoke.cjs"
+    "test:mcp:live": "npm run compile && node scripts/mcp-smoke.cjs",
+    "test:tikz:live": "npm run compile && node scripts/tikz-smoke.cjs"
   },
   "contributes": {
     "viewsContainers": {

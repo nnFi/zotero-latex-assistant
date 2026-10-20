@@ -1,12 +1,13 @@
 # MCP mit Codex und Claude
 
-Stand: 13. Oktober 2026. Der lokale stdio-Server unterstützt Lesen, bibliografische
+Stand: 20. Oktober 2026. Der lokale stdio-Server unterstützt Lesen, bibliografische
 Neuanlage, gezielte Quellenaktualisierung, Notizverwaltung, wissenschaftliche Recherche
 mit zitatabhängigem Bib-Import, Verschieben in den Zotero-Papierkorb und Wiederherstellung,
 Anhängen lokaler PDFs als gespeicherte Kopie und Weitergabe
 angehängter PDFs an den Agenten.
 Sammlungen können angelegt, dem Projekt zugeordnet und nach einem Wechsel gelöscht werden.
 Es gibt keine lokale Textextraktion, OCR oder serverseitige Modellanalyse.
+Zusätzlich rendert `tikz_render` lokal erstellten TikZ-Code im gewählten LaTeX-Projekt.
 
 ## Zotero eigenständig und optional mit Schreibprojekt
 
@@ -82,6 +83,97 @@ Auch `zotero_set_project_bib_file` und `zotero_sync_bibliography` akzeptieren
 `projectPath`. Der bestehende Zitationsabgleich mit gespeicherten LaTeX-Dateien
 bleibt als zusätzlicher Workflow verfügbar. Offene Änderungen vorher speichern;
 der MCP sieht ausschließlich gespeicherte Dateien.
+
+## TikZ-Grafiken im LaTeX-Projekt
+
+`tikz_render` kompiliert TikZ-Code und speichert die bearbeitbare Quelle unter
+**`figures/<name>.tikz`**. `figures/` wird bei der ersten erfolgreichen
+Speicherung angelegt. `\input{figures/ablauf.tikz}` bindet die Grafik in LaTeX
+ein; dafür ist kein `input/`-Ordner nötig. Bildvorlagen interpretiert die
+KI-Anwendung, die anschließend den TikZ-Code an den MCP übergibt.
+
+Voraussetzungen: lokal installiertes TeX mit TikZ (`pgf`) und Popplers
+`pdftoppm`, erreichbar über `PATH`. Unter macOS werden fehlende TeX-Compiler
+zusätzlich unter `/Library/TeX/texbin/` gesucht.
+Zusätzliche angeforderte Pakete müssen bereits installiert sein.
+Das Werkzeug funktioniert unabhängig von Zotero und einer `.bib`-Datei.
+
+```json
+{
+  "projectPath": "/absolutes/latex-projekt",
+  "name": "ablauf",
+  "libraries": ["positioning", "arrows.meta"],
+  "code": "\\begin{tikzpicture}\\node[draw] {Start};\\end{tikzpicture}"
+}
+```
+
+`name` ist ein Dateiname ohne Endung: höchstens 80 ASCII-Buchstaben, Zahlen,
+Bindestriche oder Unterstriche, beginnend mit Buchstabe oder Zahl.
+Reservierte Windows-Gerätenamen wie `CON` sind ausgeschlossen.
+`code` enthält genau ein `tikzpicture`, ohne Dokumenthülle oder Präambel.
+`libraries` ist optional; `packages` erlaubt zusätzlich `pgfplots`, `circuitikz`,
+`tikz-cd` und `forest`. Der globale Server verlangt `projectPath`.
+Bei einem Start mit `--project` ist der Server an diesen Ordner gebunden.
+
+Die Schrift ist optional:
+
+- `font: "Arial"` oder `font: "Times New Roman"` überschreibt die Dokumentschrift
+  nur innerhalb der Grafik. Die Schrift muss lokal installiert sein.
+- Ohne `font` liest der MCP die gespeicherte Hauptdatei: zuerst `main.tex`,
+  andernfalls eine eindeutige `.tex` mit `\documentclass`. Bei mehreren Treffern
+  die gewünschte Datei als relativen Pfad in `texFile` übergeben.
+- Erkannt werden direkte `\setmainfont`, `\setsansfont`, `\setmonofont`,
+  `\familydefault`-Änderungen und gängige Schriftpakete wie `mathptmx`, `newtxtext`,
+  `helvet` oder TeX Gyre. Lokale Präambeldateien über `\input` und lokale
+  Klassen/Stilpakete werden mitgelesen. Kommentare und Dokumenttext werden ausgelassen.
+  Dynamische oder bedingte Schriftangaben benötigen ein ausdrückliches `font`.
+  Relative Präambelpfade beziehen sich auf `projectPath` als Arbeitsverzeichnis.
+  Pakete werden einmal geladen; wiederholtes `\input` wird erneut ausgewertet.
+- `engine` erlaubt `pdflatex`, `lualatex` oder `xelatex`. Ohne ausdrückliche Wahl
+  wird der `% !TeX program = ...`-Hinweis der Hauptdatei übernommen.
+  Benannte Schriften verwenden ansonsten LuaLaTeX; die übrigen Grafiken pdfLaTeX.
+  Ohne Hauptdatei und ohne `font` bleibt die Standardschrift erhalten.
+
+Benannte Schriften benötigen `fontspec` und LuaLaTeX oder XeLaTeX. Die gespeicherte
+Quelle enthält die lokale Schriftwahl und den Compilerhinweis; auch das einbindende
+Dokument muss einen kompatiblen Compiler verwenden. Die Schriftwahl ändert
+Textbeschriftungen, nicht automatisch die Mathematikschrift. Fehlende Schriften
+liefern einen Fehler, ohne eine andere Schrift einzusetzen.
+
+Das Ergebnis enthält:
+
+- `sourcePath`, `relativePath` und `sha256` der gespeicherten `.tikz`-Datei;
+- `preamble` mit den benötigten Paketen und TikZ-Bibliotheken;
+- `input`, beispielsweise `\input{figures/ablauf.tikz}`;
+- `engine`, `font`, `fontSource` (`argument`, `tex` oder `default`) und `texFile`;
+- `pdfPath` und `previewPath` im Projektcache `.cache/zotero-latex-assistant/tikz/`;
+- einen direkten MCP-Bildblock mit der PNG-Vorschau sowie Compilerwarnungen.
+
+Die KI ergänzt Präambel und Einbindebefehl bei Bedarf in der Hauptdatei.
+Die `.tikz`-Datei enthält die benötigte Präambel auch als Kommentar.
+Der Cache mit PDF/PNG kann gelöscht werden; die TikZ-Quellen bleiben nutzbar.
+
+Bei identischer Quelle folgt `unchanged`. Zum Ersetzen einer anderen bestehenden
+Quelle die Datei vorher lesen und ihren SHA-256 als `expectedSha256` übergeben.
+Ein veralteter oder fehlender Hash liefert `CONFLICT`. Änderungen während des
+Renderns verhindern ebenfalls das Speichern. Gleichzeitige Schreibzugriffe
+werden über eine kurzlebige Sperre im Grafikcache koordiniert.
+
+Kompilierungs- und Vorschaufehler liefern `isError: true` mit Diagnose und lassen
+die Quelldatei unverändert. Grenzen: 20 Sekunden je Prozess, 1600 Pixel an der
+längsten PNG-Seite, 10 MiB PDF und 5 MiB PNG. Shell-Escape ist deaktiviert;
+externe TikZ-Prozessaufrufe bleiben deaktiviert.
+TeX läuft mit den Dateirechten des Benutzers, ohne Betriebssystem-Sandbox.
+Nur vertrauenswürdigen oder geprüften Code rendern; Compilertexte sind Daten,
+keine Anweisungen an die KI.
+
+`npm run test:tikz:live` prüft den gebündelten MCP mit echtem TeX/Poppler,
+einschließlich LaTeX-Einbindung und Überschreibschutz. `-- --keep` behält
+das temporäre Projekt zur visuellen Kontrolle. Mit `-- --server /pfad/server.cjs`
+lässt sich der aus einer VSIX entpackte Server prüfen.
+`--font "Arial" --font "Times New Roman"` ergänzt echte Schriftprüfungen für
+beide Unicode-Compiler, die `.tex`-Erkennung und die Einbindung ohne Änderung
+der umgebenden Dokumentschrift. Diese Schriften müssen dafür installiert sein.
 
 ## Projekt-.bib-Datei auswählen
 
@@ -355,7 +447,7 @@ nicht technisch erzwungen; Kandidatenprüfung und Import bleiben separate Aufruf
 
 ## Wissenschaftlicher Ablauf, Notizen und Wiederherstellung
 
-Der Server stellt 33 Werkzeuge bereit. Der wissenschaftliche Ablauf ist in seinen
+Der Server stellt 34 Werkzeuge bereit, davon 33 für Zotero und eines für TikZ. Der wissenschaftliche Ablauf ist in seinen
 Anweisungen verankert und über Recherche-, Prüf- und Bibliografiewerkzeuge ausführbar:
 
 1. `zotero_research` sucht zuerst in der ausgewählten Zotero-Sammlung und der
@@ -955,7 +1047,7 @@ Das [MCP-Prüfprotokoll](mcp-smoke-report.json) hält die Ergebnisse fest:
 - Claude Code 2.1.136 verband den Server und erkannte alle acht Werkzeuge. Der
   eigentliche Modellaufruf scheiterte mit `401`, weil die Anmeldung abgelaufen
   war. Claude-Lesen und Claude-Schreiben sind bis zur erneuten Anmeldung offen.
-- Automatisierte Tests prüfen alle 33 Werkzeuge mit dem offiziellen MCP-Client
+- Automatisierte Tests prüfen die 33 Zotero-Werkzeuge mit dem offiziellen MCP-Client
   über den gebündelten stdio-Prozess sowie Neuanlage, Zuordnung, Dubletten,
   Wiederholung nach verlorener Antwort, Papierkorb, Fremdscope, Datenbankwechsel,
   Versionskonflikte, verweigerte/abgelaufene Freigaben und Änderungen während des

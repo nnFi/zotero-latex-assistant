@@ -9,6 +9,7 @@ import { metadataSchema, metadataUpdateSchema } from "../src/zotero/metadata";
 import { ZoteroError } from "../src/shared/errors";
 import { isRecord } from "../src/zotero/validation";
 import { pubcheckVerdicts } from "../src/research/pubcheck";
+import { registerTikzTool } from "./tikz";
 
 const key = z.string().regex(/^[A-Z0-9]{8}$/);
 const library = z.object({ type: z.enum(["user", "group"]), id: z.number().int().nonnegative() }).strict();
@@ -195,6 +196,11 @@ export function createServer(service: ZoteroProjectService): McpServer {
     z.object({ library, itemKey: key, expectedVersion: z.number().int().nonnegative() }).strict(),
     detail.extend({ status: z.enum(["trashed", "already-trashed"]), verified: z.literal(true), warnings: z.record(z.string(), z.unknown()), projectFilesChanged: z.boolean().optional() }),
     (args) => service.delete(args.library, args.itemKey, args.expectedVersion), true, true);
+  registerTikzTool(server, async (projectPath) => {
+    const project = (await service.forProject(projectPath)).projectRoot;
+    if (!project) throw new Error("TikZ requires an explicitly selected LaTeX project. Supply projectPath or start the MCP with --project /absolute/project.");
+    return project;
+  });
   return server;
 }
 

@@ -18,9 +18,19 @@ Serverdatei finden, Startangaben und Konfiguration zum Kopieren.
 | **Literaturdaten aktualisieren** | Änderungen aus Zotero ausdrücklich in die Projektbibliografie übernehmen; Zitier-Schlüssel bleiben stabil. |
 | **DOI und Titel suchen** | Publikationen über Crossref finden, Metadaten ansehen und die DOI kopieren. |
 | **Mit KI arbeiten · optional** | Codex oder Claude über den lokalen MCP-Server mit Recherche, Quellennotizen und PDF-Weitergabe verbinden. |
+| **TikZ-Grafiken mit KI erstellen** | Eine Bildvorlage im KI-Chat beschreiben lassen und den erzeugten TikZ-Code über `tikz_render` prüfen. Der MCP legt `figures/` automatisch an und liefert PDF und PNG-Vorschau. |
 
 Quellen und Anhänge bearbeitest du wie gewohnt in Zotero. **Open in Zotero**
 öffnet den passenden Eintrag aus der Quellenliste.
+
+Für TikZ brauchst du lokal TeX mit dem Paket `pgf` sowie Popplers
+`pdftoppm`. Benannte Schriften verwenden LuaLaTeX oder XeLaTeX mit `fontspec`.
+Eine mitgegebene Schrift hat Vorrang; andernfalls liest der MCP die
+Schrifteinstellungen aus der LaTeX-Hauptdatei. Die KI-Anwendung erkennt die
+Bildvorlage; der MCP rendert den Code und speichert ihn als `figures/<name>.tikz` im ausdrücklich
+gewählten LaTeX-Projekt. Ein `input/`-Ordner ist nicht erforderlich:
+`\input{figures/ablauf.tikz}` bindet die Datei ein.
+[Aufruf, Voraussetzungen und Dateiverhalten](docs/MCP.md#tikz-grafiken-im-latex-projekt).
 
 ### So sieht eine Zitation aus
 
@@ -284,7 +294,28 @@ Alle Zotero-Befehle findest du in der Befehlspalette (**Strg+Umschalt+P**).
 
 ## Updates
 
-### Version 0.5.0 · aktueller Entwicklungsstand
+### Version 0.7.1
+
+- **Schrifterkennung korrigiert:** Lokale Schriftpakete werden einmal ausgewertet,
+  ihre ursprünglichen Optionen bleiben erhalten. Präambelpfade werden aus dem
+  Projektordner aufgelöst.
+- Hauptdateisuche und Schriftauswertung getrennt, Werkzeugbeschreibung gekürzt.
+
+### Version 0.7.0
+
+- **Schriften für TikZ:** Optional `font` mitgeben oder die Schrifteinstellung
+  aus der `.tex`-Hauptdatei übernehmen. `texFile` wählt die Hauptdatei ausdrücklich.
+- **LuaLaTeX und XeLaTeX:** Benannte Schriften gelten nur für die Grafik;
+  das Ergebnis nennt den verwendeten Compiler und die Herkunft der Schrifteinstellung.
+
+### Version 0.6.0
+
+- **TikZ über MCP:** `tikz_render` erstellt `figures/` automatisch, speichert
+  bearbeitbare Grafiken und liefert PDF sowie PNG-Vorschau.
+- **Bestehende Grafiken ändern:** Änderungen prüfen den vorher gelesenen
+  Dateistand; fehlgeschlagene Kompilierungen lassen die Quelle unverändert.
+
+### Version 0.5.0
 
 - **MCP-Einrichtung:** Cursor-Verbindung im Projekt; Serverdatei bei Cursor,
   Codex und Claude ausdrücklich auswählen, mit Prüfung und Abbruch ohne Änderungen.

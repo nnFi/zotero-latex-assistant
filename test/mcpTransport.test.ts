@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { newProjectConfig, readProjectConfig, readProjectText, saveProjectConfig } from "../src/config/project";
+import { APP_VERSION } from "../src/shared/version";
 
 // The real bundled stdio server talks to a deterministic local-API test double
 // in its own process. No network or Zotero installation is needed for this test.
@@ -129,13 +130,20 @@ test("official MCP client exercises local tools and identifier tools over real b
     throw new Error(diagnostics || (error instanceof Error ? error.message : "No diagnostics captured"), { cause: error });
   }
   const { tools } = await client.listTools();
-  assert.equal(client.getServerVersion()?.version, "0.5.0");
-  assert.equal(tools.length, 33);
+  assert.equal(client.getServerVersion()?.version, APP_VERSION);
+  assert.equal(tools.length, 34);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object"); assert.equal(tool.outputSchema?.type, "object");
     assert.equal(tool.annotations?.openWorldHint, ["zotero_lookup_identifier", "zotero_import_identifier", "zotero_research", "zotero_check_sources", "zotero_check_candidate"].includes(tool.name));
   }
   assert.equal(tools.find((tool) => tool.name === "zotero_delete_item")!.annotations!.destructiveHint, true);
+  assert.equal(tools.find((tool) => tool.name === "tikz_render")!.annotations!.readOnlyHint, false);
+  const foreignFigure = await client.callTool({ name: "tikz_render", arguments: {
+    projectPath: path.dirname(root), name: "foreign", code: String.raw`\begin{tikzpicture}\node {Foreign};\end{tikzpicture}`,
+  } });
+  assert.equal(foreignFigure.isError, true);
+  assert.match((foreignFigure.structuredContent as { error: { message: string } }).error.message, /outside/);
+  assert(!(await readdir(root)).includes("figures"));
   const call = async (name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
     const response = await client.callTool({ name, arguments: args });
     assert(!response.isError, JSON.stringify(response));

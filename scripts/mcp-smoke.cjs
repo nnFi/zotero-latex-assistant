@@ -34,7 +34,7 @@ async function main() {
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    if (tools.tools.length !== 33) throw new Error("Expected thirty-three Zotero MCP tools.");
+    if (tools.tools.length !== 34) throw new Error("Expected thirty-four MCP tools (Zotero and TikZ).");
     const scope = await call("zotero_get_selected_collection");
     report.scope = scope;
     await call("zotero_search", { query: "", limit: 1 });

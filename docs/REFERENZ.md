@@ -9,10 +9,13 @@ Klassische Literaturverwaltung und KI-Unterstützung über den lokalen MCP-Serve
 **Aktueller Stand:** Zotero-Seitenleiste mit Bibliotheken, hierarchischen Sammlungen,
 Projektzuordnung in `.zotero/config.json`, gezieltem BibLaTeX-Import,
 Quellenliste mit Mehrfachauswahl, Einfügen von LaTeX-Zitationen und DOI-/Titelsuche über Crossref.
-Der lokale MCP-Server bietet außerdem 33 Werkzeuge für Lesen, wissenschaftliche Recherche,
+Der lokale MCP-Server bietet außerdem 34 Werkzeuge für Lesen, wissenschaftliche Recherche,
 zitatabhängigen Bib-Import, Notizen, Dublettenprüfung, Quellenaktualisierung,
 bibliografische Neuanlage, Zotero-Papierkorb mit Wiederherstellung, Sammlungsverwaltung und PDF-Weitergabe
-an den Agenten. PDFs werden unverändert als Datei übergeben, ohne lokale Textextraktion.
+an den Agenten sowie lokales TikZ-Rendering. PDFs aus Zotero werden unverändert
+als Datei übergeben, ohne lokale Textextraktion. `tikz_render` legt `figures/`
+automatisch an, speichert `.tikz`-Quellen und liefert PDF sowie PNG-Vorschau.
+[TikZ-Aufruf und Ablage](MCP.md#tikz-grafiken-im-latex-projekt).
 **Zotero: Set up Codex MCP connection**, **Zotero: Set up Claude MCP connection**
 und **Zotero: Set up Cursor MCP connection**
 richten das aktuelle Projekt für die jeweiligen VS-Code-KI-Erweiterungen ein.

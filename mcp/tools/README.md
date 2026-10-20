@@ -1,11 +1,12 @@
 # Implementierte MCP-Werkzeuge
 
-Der eigenständige stdio-Einstieg `mcp/server.ts` registriert 33 Werkzeuge über
-das offizielle TypeScript-SDK 2.3.1. Die gemeinsame Geschäftslogik liegt in
+Der eigenständige stdio-Einstieg `mcp/server.ts` registriert 34 Werkzeuge (33 Zotero, 1 TikZ) über
+das offizielle TypeScript-SDK 2.3.1. Die Zotero-Geschäftslogik liegt in
 `src/zotero/projectService.ts`; sie importiert keine VS-Code-API.
 
 | Werkzeug | Zweck |
 | --- | --- |
+| `tikz_render` | TikZ lokal kompilieren, `figures/` automatisch anlegen, editierbare `.tikz` speichern und PDF sowie direkte PNG-Vorschau zurückgeben; unabhängig von Zotero |
 | `zotero_get_context` | Eigenständigen Betrieb oder explizites Projekt, gespeicherte Einstellungen und vorhandene `.bib`-Kandidaten prüfen |
 | `zotero_add_to_bibliography` | Ausgewählte Quellen in eine vorhandene Projekt-.bib übernehmen, ohne `.tex` zu benötigen oder zu ändern |
 | `zotero_list_libraries` | Bibliotheken für die Projekteinstellung anzeigen |
@@ -47,7 +48,10 @@ Aufruf; ein mit `--project` fest gebundener Server erlaubt keinen anderen Ordner
 `zotero_get_context` prüft vor der Einrichtung; `zotero_set_project_collection`
 legt fehlende Einstellungen selbst an. Ohne vorhandene `.bib` wird keine erzeugt.
 Ergebnisse haben `ok` und `result` bzw. `error`, ergänzt um MCP-Textinhalt.
-Schreiben braucht eine ausdrückliche Benutzeranweisung oder Zustimmung zum
+`tikz_render` ergänzt bei Erfolg einen MCP-Bildblock; seine Registrierung steht
+in `mcp/tikz.ts`, die lokale Kompilierung in `src/tikz/renderer.ts`.
+Voraussetzungen und Dateiverhalten: [TikZ im Projekt](../../docs/MCP.md#tikz-grafiken-im-latex-projekt).
+Schreiben in Zotero braucht eine ausdrückliche Benutzeranweisung oder Zustimmung zum
 Vorschlag, konfigurierte Bibliothek, ausgewählte Sammlung, Server-ID und Zotero-Freigabe.
 Der Bib-Abgleich schreibt ausschließlich Projektdateien; ein Auftrag zum Schreiben
 mit Zitationen umfasst deren automatische Übernahme. Er braucht keine Zotero-Schreibfreigabe.
