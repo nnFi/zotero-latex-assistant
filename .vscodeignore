@@ -1,6 +1,7 @@
 .vscode/**
 *.vsix
 AGENTS.md
+mcp-latest.cjs
 .agents/**
 .codex/**
 .aws/**

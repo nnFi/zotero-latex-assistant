@@ -170,6 +170,8 @@ Lesezugriffe brauchst du keinen API-Schlüssel.
    Im Menü **… → Install from VSIX…** die Datei
    `zotero-latex-assistant-latest.vsix` auswählen. Diese Datei liegt immer als
    aktuelle installierbare Version im Repository.
+   Der aktuelle eigenständig ausführbare MCP-Server liegt zusätzlich als
+   `mcp-latest.cjs` im Repository und wird mit `npm run package` aktualisiert.
 2. In der Erweiterungsansicht **LaTeX Workshop** von **James Yu** installieren,
    wenn du LaTeX-Dateien in VS Code bauen und PDFs ansehen möchtest.
 3. Deinen LaTeX-Projektordner in VS Code öffnen und links auf das
