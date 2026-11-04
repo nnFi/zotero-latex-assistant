@@ -16,6 +16,8 @@ node_modules/**
 tsconfig.json
 tsconfig.webview.json
 scripts/**
+PROJEKTSTATUS.md
+dist/extension-readme.md
 package-lock.json
 docs/**
 **/*.log
@@ -24,13 +26,7 @@ dist/src/**
 README.md
 !docs/MCP.md
 !docs/RESEARCH_WORKFLOW.md
-!docs/mcp-smoke-report.json
-
-!docs/pdf-handoff-smoke-report.json
-
-!docs/REFERENZ.md
-!docs/ARCHITEKTUR.md
-!docs/live-smoke-report.json
+!docs/EXTENSION-DETAILS.md
 
 !LICENSE
 !THIRD-PARTY-NOTICES.md
