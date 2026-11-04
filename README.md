@@ -297,7 +297,50 @@ Alle Zotero-Befehle findest du in der Befehlspalette (**Strg+Umschalt+P**).
 
 ---
 
+## Lizenz
+
+Der eigene Code und die Dokumentation stehen unter der **MIT-Lizenz**
+(siehe `LICENSE`, Copyright © 2026 Finn Plaßmeier).
+Eingebundene Bibliotheken und übernommene Sprachdaten behalten ihre jeweiligen
+Lizenzen. Die CSL-Sprachdaten stehen unter **CC BY-SA 3.0**.
+Die vollständigen Lizenztexte und Herkunftshinweise stehen in
+[Third-party notices](THIRD-PARTY-NOTICES.md).
+
+Beim Paketbau werden diese Dateien in die VSIX aufgenommen. Die vollständigen
+Lizenztexte werden zusätzlich direkt in die JavaScript-Bundles eingebettet, damit sie
+auch beim einzelnen Weitergeben von `mcp-latest.cjs` erhalten bleiben.
+
 ## Updates
+
+### Version 1.0.0 – vorbereitet am 4. November 2026
+
+Die erste stabile Version bündelt die bisherigen Funktionen für das Schreiben
+mit Zotero und LaTeX:
+
+- **Literatur im Projekt:** Bibliotheken und Sammlungen durchsuchen, Quellen
+  auswählen, direkt zitieren und die Projektbibliografie ausdrücklich aktualisieren.
+- **Stabile Zitierschlüssel:** Vorschau, Dublettenprüfung, gesicherte Migration
+  und Sicherungen bei Änderungen an Bibliografie und LaTeX-Dateien.
+- **Optionale KI-Anbindung:** MCP-Einrichtung für VS Code / Copilot, Codex,
+  Claude und Cursor; Recherche, Quellenbearbeitung, Notizen und PDF-Weitergabe.
+- **TikZ im LaTeX-Projekt:** Grafiken lokal rendern, PDF und PNG-Vorschau erhalten
+  und die Schrift aus dem Hauptdokument übernehmen oder ausdrücklich wählen.
+- **Lizenzen ergänzt:** Eigener Code unter MIT; vollständige Fremdlizenztexte
+  und CSL-Herkunftshinweise mit automatischer Prüfung beim Paketbau.
+- **Build-Abhängigkeiten aktualisiert:** Gemeldete Sicherheitslücken im
+  Paketierungswerkzeug und seinen Abhängigkeiten behoben.
+
+Die manuelle Release-Abnahme wurde vom Benutzer bestätigt. Der Quellstand ist
+auf `1.0.0` gesetzt; die installierbare VSIX und `mcp-latest.cjs` werden erst nach
+ausdrücklicher Freigabe neu gebaut. Die derzeit eingecheckten Pakete bleiben
+bis dahin auf Version `0.7.2`. Aktueller Prüf- und Freigabestand:
+[Projektstatus](PROJEKTSTATUS.md).
+
+### Version 0.7.2
+
+- **VS Code / Copilot:** Projektbezogene MCP-Einrichtung über die Erweiterung.
+- **MCP-Einrichtung vereinheitlicht:** Befehle für VS Code / Copilot, Codex,
+  Claude und Cursor mit selbst gewählter Serverdatei.
 
 ### Version 0.7.1
 

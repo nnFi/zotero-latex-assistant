@@ -20,7 +20,7 @@ export function getClientOptions(): ZoteroClientOptions {
   };
 }
 
-/** Resource-Scope hält spätere Projekt-Einstellungen auch bei mehreren Ordnern getrennt. */
+/** Resource-Scope hält Projekt-Einstellungen bei mehreren Ordnern getrennt. */
 export function getProjectSettings(resource: vscode.Uri): ProjectSettings {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION, resource);
   return {

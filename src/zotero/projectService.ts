@@ -1,8 +1,9 @@
 import { createHash, randomInt } from "node:crypto";
-import { mkdir, readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, realpath, stat } from "node:fs/promises";
 import * as path from "node:path";
-import { CONFIG_FILE, newProjectConfig, projectPath, readProjectConfig, readProjectText, writeProjectText } from "../config/project";
+import { CONFIG_FILE, newProjectConfig, readProjectConfig, readProjectText, writeProjectText } from "../config/project";
 import { mcpStateDirectory } from "../config/mcpState";
+import { readProjectSources } from "../config/projectSources";
 import type { LibraryRef, ProjectConfig, ZoteroAttachment, ZoteroItemDetail } from "../shared/types";
 import { ZoteroError } from "../shared/errors";
 import { projectCitationKey } from "../biblatex/keys";
@@ -742,20 +743,7 @@ export class ZoteroProjectService {
         }
       } catch { bibliographyScanWarning = "The project bibliography could not be checked safely. Review source references manually."; }
     }
-    const sources: { path: string; text: string }[] = [];
-    const walk = async (relative: string): Promise<void> => {
-      const directory = relative ? await projectPath(this.root, relative) : this.root;
-      for (const entry of await readdir(directory, { withFileTypes: true })) {
-        if (entry.isSymbolicLink()) continue;
-        const file = relative ? `${relative}/${entry.name}` : entry.name;
-        if (entry.isDirectory() && ![".git", ".zotero", ".codex", ".claude", "node_modules", "dist", "build", "out"].includes(entry.name)) await walk(file);
-        if (entry.isFile() && /\.(tex|ltx|sty|cls)$/.test(entry.name)) {
-          const text = await readProjectText(this.root, file);
-          if (text !== undefined) sources.push({ path: file, text });
-        }
-      }
-    };
-    if (this.projectRoot) await walk("");
+    const sources = this.projectRoot ? await readProjectSources(this.root) : [];
     let citationFiles: string[] = [];
     let citationScanWarning: string | null = null;
     try { citationFiles = planTexCitationRemoval(sources, new Set([citationKey])).map((change) => change.path); }

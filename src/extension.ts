@@ -20,5 +20,3 @@ export function activate(context: vscode.ExtensionContext): void {
   void projects.startup();
   output.appendLine("Zotero LaTeX Assistant activated.");
 }
-
-// VS Code gibt alle über context.subscriptions registrierten Ressourcen frei.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-SA-3.0
 // CSL page/chapter terms, adapted from https://github.com/citation-style-language/locales.
 // Data is CC BY-SA 3.0; attribution and license: media/CSL-LOCALES-NOTICE.md.
 // Snapshot retrieved 2026-10-11. No runtime network requests are needed.

@@ -437,17 +437,9 @@ export class ProjectController {
         for (const entry of selected) targets[entry.itemKey] = current[entry.itemKey]!;
       }
       const bibSources = [{ path: config.bibFile, text: bibliography }];
-      const texSources: MigrationSource[] = [];
-      const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, "**/*.{bib,tex,ltx,sty,cls}"),
-        "**/{node_modules,.git,.zotero,dist,build,out}/**");
-      for (const uri of uris) {
-        const relative = path.relative(folder.uri.fsPath, uri.fsPath).split(path.sep).join("/");
-        if (relative === config.bibFile) continue;
-        await this.assertSaved(folder, relative);
-        const text = await readProjectText(folder.uri.fsPath, relative);
-        if (text === undefined) throw new Error("The project file list changed while preparing the migration. Please retry.");
-        (relative.endsWith(".bib") ? bibSources : texSources).push({ path: relative, text });
-      }
+      const sources = await this.projectSources(folder, config.bibFile);
+      const texSources = sources.filter((source) => !source.path.endsWith(".bib"));
+      bibSources.push(...sources.filter((source) => source.path.endsWith(".bib") && source.path !== config.bibFile));
       const plan = planCitationKeyMigration(config, bibSources, texSources, targets);
       if (!plan.keys.length) { void vscode.window.showInformationMessage("No citation keys need to be changed."); return; }
       const preview = `.zotero/migration-preview-${randomUUID()}.md`;
@@ -458,16 +450,16 @@ export class ProjectController {
       if (decision !== "Migrate keys") return;
       const updates = [...plan.changes, { path: CONFIG_FILE, previous: snapshot, text: JSON.stringify(plan.config, null, 2) + "\n" }];
       for (const update of updates) await this.assertSaved(folder, update.path);
-      const latestFiles = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, "**/*.{bib,tex,ltx,sty,cls}"),
-        "**/{node_modules,.git,.zotero,dist,build,out}/**");
-      const latestPaths = new Set([...latestFiles.map((uri) => path.relative(folder.uri.fsPath, uri.fsPath).split(path.sep).join("/")), config.bibFile]);
+      const current = await this.projectSources(folder, config.bibFile);
+      const latestPaths = new Set(current.map((source) => source.path));
       const plannedPaths = new Set([...bibSources, ...texSources].map((source) => source.path));
       if (latestPaths.size !== plannedPaths.size || [...latestPaths].some((relative) => !plannedPaths.has(relative))) {
         throw new Error("The project file list changed during the migration preview. Please retry.");
       }
       for (const source of [...bibSources, ...texSources]) {
-        await this.assertSaved(folder, source.path);
-        if (await readProjectText(folder.uri.fsPath, source.path) !== source.text) throw new Error(`${source.path} changed during the migration preview. Please retry.`);
+        if (current.find((file) => file.path === source.path)?.text !== source.text) {
+          throw new Error(`${source.path} changed during the migration preview. Please retry.`);
+        }
       }
       const backup = await writeProjectChanges(folder.uri.fsPath, updates, "migration");
       this.log(`Citation key migration completed. Backup: ${backup}`);
@@ -483,24 +475,7 @@ export class ProjectController {
       await this.assertSaved(folder, CONFIG_FILE);
       const snapshot = await readProjectText(folder.uri.fsPath, CONFIG_FILE);
       const config = snapshot === undefined ? newProjectConfig(getProjectSettings(folder.uri).citationCommand) : parseProjectConfig(JSON.parse(snapshot));
-      const collect = async (): Promise<MigrationSource[]> => {
-        const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, "**/*.{bib,tex,ltx,sty,cls}"),
-          "**/{node_modules,.git,.zotero,dist,build,out}/**");
-        const paths = new Set(uris.map((uri) => path.relative(folder.uri.fsPath, uri.fsPath).split(path.sep).join("/")));
-        if (config.bibFile) {
-          await this.assertSaved(folder, config.bibFile);
-          if (await readProjectText(folder.uri.fsPath, config.bibFile) !== undefined) paths.add(config.bibFile);
-        }
-        const sources: MigrationSource[] = [];
-        for (const relative of [...paths].sort()) {
-          await this.assertSaved(folder, relative);
-          const text = await readProjectText(folder.uri.fsPath, relative);
-          if (text === undefined) throw new Error("The project file list changed while preparing deletion. Please retry.");
-          sources.push({ path: relative, text });
-        }
-        return sources;
-      };
-      const sources = await collect();
+      const sources = await this.projectSources(folder, config.bibFile);
       const plan = planCitationDeletion(config, sources.filter((source) => source.path.endsWith(".bib")), sources.filter((source) => !source.path.endsWith(".bib")));
       const updates = [...plan.changes, { path: CONFIG_FILE, previous: snapshot, text: JSON.stringify(plan.config, null, 2) + "\n" }];
       const preview = `.zotero/delete-citations-preview-${randomUUID()}.md`;
@@ -511,7 +486,7 @@ export class ProjectController {
         detail: `Review the opened preview: ${plan.citationCount} citation invocation(s) and ${plan.bibliographyCount} project bibliography entry/entries will be removed. The library, collection and imported-key mapping will be cleared. Original files will be backed up. Zotero records are kept.`,
       }, "Delete all citations");
       if (confirm !== "Delete all citations") return;
-      const current = await collect();
+      const current = await this.projectSources(folder, config.bibFile);
       if (current.length !== sources.length || sources.some((source) => !current.some((file) => file.path === source.path && file.text === source.text))) {
         throw new Error("The project files changed during the deletion preview. Please retry.");
       }

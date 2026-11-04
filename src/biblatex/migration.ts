@@ -3,7 +3,7 @@ import { parseProjectConfig, type ProjectFileChange } from "../config/project";
 import { bibExpressionCode, bibliographyRecords, type BibField } from "./fields";
 import { refreshBibliographyChecksum } from "./importer";
 import { projectCitationKey, validateCitationKey } from "./keys";
-import { texArgument, texCode } from "./texSyntax";
+import { declaredCitationCommands, texArgument, texCode, texCommandMatches } from "./texSyntax";
 
 export interface MigrationSource { readonly path: string; readonly text: string }
 export interface KeyMigration { readonly itemKey: string; readonly previous: string; readonly next: string }
@@ -85,10 +85,7 @@ export function migrateTexReferences(text: string, replacements: ReadonlyMap<str
   declaredCommands: ReadonlyMap<string, boolean> = new Map()): { text: string; count: number } {
   const code = texCode(text);
   const edits: Edit[] = [];
-  for (const command of code.matchAll(/\\([a-zA-Z]+)\*?/g)) {
-    let slashes = 0;
-    for (let i = command.index! - 1; i >= 0 && code[i] === "\\"; i--) slashes++;
-    if (slashes % 2) continue;
+  for (const command of texCommandMatches(code, /\\([a-zA-Z]+)\*?/g)) {
     const name = command[1]!;
     if (!citationCommands.has(name) && !declaredCommands.has(name)) continue;
     let position = command.index! + command[0].length;
@@ -166,12 +163,7 @@ export function planCitationKeyMigration(config: ProjectConfig, bibliography: re
   }
   const changes: ProjectFileChange[] = [];
   let referenceCount = 0;
-  const declaredCommands = new Map<string, boolean>();
-  for (const source of tex) {
-    for (const definition of texCode(source.text).matchAll(/\\Declare(Multi)?CiteCommand\*?\s*\{\s*\\([a-zA-Z]+)\s*\}/g)) {
-      declaredCommands.set(definition[2]!, !!definition[1]);
-    }
-  }
+  const declaredCommands = declaredCitationCommands(tex);
   for (const source of bibliography) {
     const edits: Edit[] = [];
     for (const entry of records.get(source.path)!) {

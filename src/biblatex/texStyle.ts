@@ -1,12 +1,9 @@
 import { validateBiblatexStyle } from "./styles";
-import { texCode, texArgument, texCommandMatches as commandMatches } from "./texSyntax";
+import { texCode, texArgument, texCommandMatches } from "./texSyntax";
 import { planBiblatexResources, reachableTexSources } from "./texResources";
 
 export interface TexSource { readonly path: string; readonly text: string }
 export interface TexChange extends TexSource { readonly previous: string }
-
-const codeOnly = texCode;
-const argument = texArgument;
 
 function options(value: string, style: string, includeStyle: boolean): string {
   const parts: string[] = [];
@@ -28,24 +25,24 @@ function options(value: string, style: string, includeStyle: boolean): string {
 /** Synchronize all active package declarations, preserving other package options. */
 export function planBiblatexStyle(sources: readonly TexSource[], style: string, bibFile = ""): readonly TexChange[] {
   validateBiblatexStyle(style);
-  const parsed = sources.map((source) => ({ source, code: codeOnly(source.text),
+  const parsed = sources.map((source) => ({ source, code: texCode(source.text),
     edits: [] as { start: number; end: number; text: string }[], loads: false }));
   for (const file of parsed) {
-    if (commandMatches(file.code, /\\bibliographystyle\s*\{/g).length) {
+    if (texCommandMatches(file.code, /\\bibliographystyle\s*\{/g).length) {
       throw new Error(`${file.source.path} uses classic BibTeX. Convert it to BibLaTeX before selecting a BibLaTeX style.`);
     }
-    for (const match of commandMatches(file.code, /\\(usepackage|RequirePackage|PassOptionsToPackage|ExecuteBibliographyOptions)\b/g)) {
+    for (const match of texCommandMatches(file.code, /\\(usepackage|RequirePackage|PassOptionsToPackage|ExecuteBibliographyOptions)\b/g)) {
       const command = match[1]!;
       const offset = match.index! + match[0].length;
       if (command === "ExecuteBibliographyOptions") {
-        const arg = argument(file.code, offset, "{", "}");
+        const arg = texArgument(file.code, offset, "{", "}");
         if (arg && /(?:^|,)\s*(?:style|bibstyle|citestyle)\s*=/.test(arg.content)) {
           file.edits.push({ start: arg.start, end: arg.end, text: `{${options(arg.content, style, false)}}` });
         }
         continue;
       }
-      const optional = command === "PassOptionsToPackage" ? argument(file.code, offset, "{", "}") : argument(file.code, offset, "[", "]");
-      const packages = argument(file.code, optional?.end ?? offset, "{", "}");
+      const optional = command === "PassOptionsToPackage" ? texArgument(file.code, offset, "{", "}") : texArgument(file.code, offset, "[", "]");
+      const packages = texArgument(file.code, optional?.end ?? offset, "{", "}");
       if (!packages || !packages.content.split(",").map((part) => part.trim()).includes("biblatex")) continue;
       if (packages.content.trim() !== "biblatex") throw new Error(`${file.source.path}: load biblatex in its own package declaration before changing the style.`);
       if (command !== "PassOptionsToPackage") file.loads = true;
@@ -56,13 +53,13 @@ export function planBiblatexStyle(sources: readonly TexSource[], style: string, 
     }
   }
   for (const file of parsed) {
-    const match = commandMatches(file.code, /\\documentclass\b/g)[0];
+    const match = texCommandMatches(file.code, /\\documentclass\b/g)[0];
     if (!match) continue;
     const reachable = new Set(reachableTexSources(file.source, sources).map((source) => source.path));
     const dependencies = parsed.filter((dependency) => reachable.has(dependency.source.path));
     const offset = match.index! + match[0].length;
-    const optional = argument(file.code, offset, "[", "]");
-    const cls = argument(file.code, optional?.end ?? offset, "{", "}");
+    const optional = texArgument(file.code, offset, "[", "]");
+    const cls = texArgument(file.code, optional?.end ?? offset, "{", "}");
     if (!cls) throw new Error(`${file.source.path}: cannot find the document class argument.`);
     const newline = file.source.text.includes("\r\n") ? "\r\n" : "\n";
     const endOfLine = file.source.text.indexOf("\n", cls.end);

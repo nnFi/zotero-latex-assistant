@@ -1,0 +1,92 @@
+[
+  {
+    "name": "@modelcontextprotocol/server",
+    "version": "2.3.1",
+    "license": "Apache-2.0 / MIT (upstream licensing transition)",
+    "file": "mcp-sdk.txt",
+    "installedLicense": "LICENSE",
+    "source": "https://github.com/modelcontextprotocol/typescript-sdk",
+    "note": "Includes @modelcontextprotocol/core-internal sources from the same SDK. The complete upstream license, including its transition notice, is reproduced unchanged. SDK source files are combined and transformed by esbuild for this distribution."
+  },
+  {
+    "name": "@modelcontextprotocol/core",
+    "version": "2.3.1",
+    "license": "Apache-2.0 / MIT (upstream licensing transition)",
+    "file": "mcp-sdk.txt",
+    "installedLicense": "LICENSE",
+    "source": "https://github.com/modelcontextprotocol/typescript-sdk"
+  },
+  {
+    "name": "jsonc-parser",
+    "version": "3.3.1",
+    "license": "MIT",
+    "file": "jsonc-parser.txt",
+    "installedLicense": "LICENSE.md",
+    "source": "https://github.com/microsoft/node-jsonc-parser",
+    "note": "Source-file copyright notice: Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT License."
+  },
+  {
+    "name": "smol-toml",
+    "version": "1.9.1",
+    "license": "BSD-3-Clause",
+    "file": "smol-toml.txt",
+    "installedLicense": "LICENSE",
+    "source": "https://github.com/squirrelchat/smol-toml"
+  },
+  {
+    "name": "zod",
+    "version": "4.6.6",
+    "license": "MIT",
+    "file": "zod.txt",
+    "installedLicense": "LICENSE",
+    "source": "https://github.com/colinhacks/zod"
+  },
+  {
+    "name": "content-type",
+    "version": "1.0.5",
+    "license": "MIT",
+    "file": "content-type.txt",
+    "source": "https://raw.githubusercontent.com/jshttp/content-type/v1.0.5/LICENSE",
+    "note": "Already bundled into the MCP SDK; not a separately installed project dependency."
+  },
+  {
+    "name": "ajv",
+    "version": "8.18.0",
+    "license": "MIT",
+    "file": "ajv.txt",
+    "source": "https://raw.githubusercontent.com/ajv-validator/ajv/v8.18.0/LICENSE",
+    "note": "Already bundled into the MCP SDK's JSON Schema validator."
+  },
+  {
+    "name": "ajv-formats",
+    "version": "3.0.1",
+    "license": "MIT",
+    "file": "ajv-formats.txt",
+    "source": "https://raw.githubusercontent.com/ajv-validator/ajv-formats/v3.0.1/LICENSE",
+    "note": "Already bundled into the MCP SDK's JSON Schema validator."
+  },
+  {
+    "name": "fast-deep-equal",
+    "version": "3.1.3",
+    "license": "MIT",
+    "file": "fast-deep-equal.txt",
+    "source": "https://raw.githubusercontent.com/epoberezkin/fast-deep-equal/v3.1.3/LICENSE",
+    "note": "Already bundled into the MCP SDK's JSON Schema validator."
+  },
+  {
+    "name": "fast-uri",
+    "version": "3.1.0",
+    "license": "BSD-3-Clause",
+    "file": "fast-uri.txt",
+    "source": "https://raw.githubusercontent.com/fastify/fast-uri/v3.1.0/LICENSE",
+    "note": "Already bundled into the MCP SDK's JSON Schema validator; includes the upstream URI.js attribution."
+  },
+  {
+    "name": "json-schema-traverse",
+    "version": "1.0.0",
+    "license": "MIT",
+    "file": "json-schema-traverse.txt",
+    "source": "https://raw.githubusercontent.com/epoberezkin/json-schema-traverse/v1.0.0/LICENSE",
+    "note": "Already bundled into the MCP SDK's JSON Schema validator."
+  }
+]

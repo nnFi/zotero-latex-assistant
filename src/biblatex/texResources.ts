@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { texArgument, texCode, texCommandMatches as commandMatches } from "./texSyntax";
+import { texArgument, texCode, texCommandMatches } from "./texSyntax";
 import type { TexChange, TexSource } from "./texStyle";
 
 export function reachableTexSources(source: TexSource, sources: readonly TexSource[], seen = new Set<string>()): readonly TexSource[] {
@@ -7,7 +7,7 @@ export function reachableTexSources(source: TexSource, sources: readonly TexSour
   seen.add(source.path);
   const result = [source];
   const code = texCode(source.text);
-  for (const match of commandMatches(code, /\\(input|include|usepackage|RequirePackage|documentclass|LoadClass)\b/g)) {
+  for (const match of texCommandMatches(code, /\\(input|include|usepackage|RequirePackage|documentclass|LoadClass)\b/g)) {
     const offset = match.index! + match[0].length;
     const optional = texArgument(code, offset, "[", "]");
     const arg = texArgument(code, optional?.end ?? offset, "{", "}");
@@ -27,7 +27,7 @@ interface Resource { start: number; end: number; name: string; extensionless: bo
 function resources(source: TexSource): readonly Resource[] {
   const code = texCode(source.text);
   const result: Resource[] = [];
-  for (const match of commandMatches(code, /\\(addbibresource|addglobalbib|addsectionbib|bibliography)\b/g)) {
+  for (const match of texCommandMatches(code, /\\(addbibresource|addglobalbib|addsectionbib|bibliography)\b/g)) {
     const offset = match.index! + match[0].length;
     const optional = texArgument(code, offset, "[", "]");
     const arg = texArgument(code, optional?.end ?? offset, "{", "}");
@@ -59,7 +59,7 @@ function matchesResource(name: string, bibFile: string, context: string): boolea
 /** Change only the selected local resource; preserve options, other resources and examples. */
 export function planBiblatexResources(sources: readonly TexSource[], previousBib: string, bibFile: string): readonly TexChange[] {
   if (/[{}%#$^~\\\r\n&]/.test(bibFile)) throw new Error("The .bib file name contains characters that cannot be inserted into a LaTeX resource reference.");
-  const roots = sources.filter((source) => commandMatches(texCode(source.text), /\\documentclass\b/g).length);
+  const roots = sources.filter((source) => texCommandMatches(texCode(source.text), /\\documentclass\b/g).length);
   const reachable = new Map(roots.map((root) => [root.path, reachableTexSources(root, sources)]));
   const changed = sources.map((source) => {
     const contexts = roots.filter((root) => reachable.get(root.path)!.some((dependency) => dependency.path === source.path));
@@ -88,11 +88,11 @@ export function planBiblatexResources(sources: readonly TexSource[], previousBib
   // Complete an existing BibLaTeX setup without inventing a citation style.
   for (const root of changed.filter((source) => roots.some((original) => original.path === source.path))) {
     const dependencies = reachableTexSources(root, changed);
-    const loads = dependencies.some((dependency) => commandMatches(texCode(dependency.text), /\\(?:usepackage|RequirePackage)\s*(?:\[[\s\S]*?\])?\s*\{[^}]*\bbiblatex\b[^}]*\}/g).length);
+    const loads = dependencies.some((dependency) => texCommandMatches(texCode(dependency.text), /\\(?:usepackage|RequirePackage)\s*(?:\[[\s\S]*?\])?\s*\{[^}]*\bbiblatex\b[^}]*\}/g).length);
     if (!loads) continue;
     const code = texCode(root.text);
-    const begin = commandMatches(code, /\\begin\s*\{document\}/g)[0];
-    const end = commandMatches(code, /\\end\s*\{document\}/g)[0];
+    const begin = texCommandMatches(code, /\\begin\s*\{document\}/g)[0];
+    const end = texCommandMatches(code, /\\end\s*\{document\}/g)[0];
     if (!begin || !end) throw new Error(`${root.path}: a complete document environment is required to add bibliography references.`);
     const newline = root.text.includes("\r\n") ? "\r\n" : "\n";
     const edits: { start: number; text: string }[] = [];
@@ -100,7 +100,7 @@ export function planBiblatexResources(sources: readonly TexSource[], previousBib
       || matchesResource(ref.name, bibFile, "main.tex")))) {
       edits.push({ start: begin.index!, text: `\\addbibresource{${path.posix.relative(path.posix.dirname(root.path), bibFile)}}${newline}` });
     }
-    if (!dependencies.some((dependency) => commandMatches(texCode(dependency.text), /\\printbibliography\b/g).length)) {
+    if (!dependencies.some((dependency) => texCommandMatches(texCode(dependency.text), /\\printbibliography\b/g).length)) {
       edits.push({ start: end.index!, text: `\\printbibliography${newline}` });
     }
     for (const edit of edits.sort((a, b) => b.start - a.start)) root.text = root.text.slice(0, edit.start) + edit.text + root.text.slice(edit.start);

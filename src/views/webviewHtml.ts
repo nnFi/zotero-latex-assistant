@@ -7,9 +7,9 @@ export function escapeHtml(value: unknown): string {
 }
 
 const css = `body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:24px;max-width:920px;margin:auto}
-h1{font-size:24px} label{display:block;margin:14px 0 5px}input,textarea,select{box-sizing:border-box;width:100%;padding:8px;color:var(--vscode-input-foreground);background:var(--vscode-input-background);border:1px solid var(--vscode-input-border,transparent);font:inherit}
-textarea{min-height:80px;resize:vertical}textarea[rows="1"]{min-height:38px;height:38px}button{cursor:pointer;margin:8px 8px 8px 0;padding:8px 12px;border:0;color:var(--vscode-button-foreground);background:var(--vscode-button-background)}button:disabled{opacity:.5;cursor:default}
-pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--vscode-textCodeBlock-background);padding:12px} .muted{color:var(--vscode-descriptionForeground)} .creator{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;margin:8px 0} .creator button{margin:0} #status{padding:8px 0;color:var(--vscode-descriptionForeground)}`;
+h1{font-size:24px} label{display:block;margin:14px 0 5px}input{box-sizing:border-box;width:100%;padding:8px;color:var(--vscode-input-foreground);background:var(--vscode-input-background);border:1px solid var(--vscode-input-border,transparent);font:inherit}
+button{cursor:pointer;margin:8px 8px 8px 0;padding:8px 12px;border:0;color:var(--vscode-button-foreground);background:var(--vscode-button-background)}button:disabled{opacity:.5;cursor:default}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--vscode-textCodeBlock-background);padding:12px} .muted{color:var(--vscode-descriptionForeground)} #status{padding:8px 0;color:var(--vscode-descriptionForeground)}`;
 
 export function shell(title: string, body: string, script: string, extraCss = ""): string {
   const nonce = randomBytes(18).toString("base64");

@@ -25,7 +25,8 @@ export async function run(): Promise<void> {
   };
   try {
     assert.equal(vscode.workspace.isTrusted, true, "The generated live-test workspace must be trusted in VS Code.");
-    const extension = vscode.extensions.getExtension("local.zotero-latex-assistant");
+    const manifest = JSON.parse(await readFile(path.resolve(__dirname, "../../../package.json"), "utf8")) as { publisher: string; name: string };
+    const extension = vscode.extensions.getExtension(`${manifest.publisher}.${manifest.name}`);
     assert.ok(extension, "Development extension is available in the real host");
     await extension.activate();
     assert.equal(extension.isActive, true);

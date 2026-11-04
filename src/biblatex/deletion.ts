@@ -4,7 +4,7 @@ import { bibEntries, managedBibliographyKeys, refreshBibliographyChecksum, synch
 import { bibliographyRecords } from "./fields";
 import { projectCitationKey } from "./keys";
 import { citationCommands, type MigrationSource } from "./migration";
-import { texArgument, texCode, texCommandMatches, type TexArgument } from "./texSyntax";
+import { declaredCitationCommands, texArgument, texCode, texCommandMatches, type TexArgument } from "./texSyntax";
 
 interface Edit { start: number; end: number; text: string }
 export interface CitationDeletionPlan {
@@ -42,12 +42,9 @@ export function deleteTexCitations(text: string, declared: ReadonlyMap<string, b
   let count = 0;
   let consumed = 0;
   const openEnvironments: { name: string; converted: boolean }[] = [];
-  for (const command of code.matchAll(/\\([a-zA-Z]+)\*?/g)) {
+  for (const command of texCommandMatches(code, /\\([a-zA-Z]+)\*?/g)) {
     const start = command.index!;
     if (start < consumed) continue;
-    let slashes = 0;
-    for (let i = start - 1; i >= 0 && code[i] === "\\"; i--) slashes++;
-    if (slashes % 2) continue;
     const name = command[1]!;
     let position = start + command[0].length;
     let quote = quotes.get(name);
@@ -158,10 +155,7 @@ export function deleteTexCitations(text: string, declared: ReadonlyMap<string, b
 
 /** Share the parser used for citation removal; definitions alone do not cite a source. */
 export function referencedCitationKeys(sources: readonly MigrationSource[]): readonly string[] {
-  const declared = new Map<string, boolean>();
-  for (const source of sources) for (const definition of texCommandMatches(texCode(source.text), /\\Declare(Multi)?CiteCommand\*?\s*\{\s*\\([a-zA-Z]+)\s*\}/g)) {
-    declared.set(definition[2]!, !!definition[1]);
-  }
+  const declared = declaredCitationCommands(sources);
   const keys = new Set<string>();
   for (const source of sources) {
     const code = texCode(source.text);
@@ -184,9 +178,9 @@ export function referencedCitationKeys(sources: readonly MigrationSource[]): rea
       }
     }
     deleteTexCitations(source.text, declared, new Set([""]), (tokens, command) => {
-    if (["defcitealias", "defbibentryset"].includes(command)) return;
-    if (tokens.includes("*")) throw new Error("Automatic bibliography import requires explicit citation keys; resolve nocite{*} first.");
-    tokens.forEach((key) => keys.add(key));
+      if (["defcitealias", "defbibentryset"].includes(command)) return;
+      if (tokens.includes("*")) throw new Error("Automatic bibliography import requires explicit citation keys; resolve nocite{*} first.");
+      tokens.forEach((key) => keys.add(key));
     });
   }
   return [...keys];
@@ -208,10 +202,7 @@ export function removeBibliographyReferences(text: string, removed: ReadonlySet<
 
 export function planTexCitationRemoval(sources: readonly MigrationSource[], removed: ReadonlySet<string>): readonly ProjectFileChange[] {
   if (!removed.size) return [];
-  const declared = new Map<string, boolean>();
-  for (const source of sources) for (const definition of texCode(source.text).matchAll(/\\Declare(Multi)?CiteCommand\*?\s*\{\s*\\([a-zA-Z]+)\s*\}/g)) {
-    declared.set(definition[2]!, !!definition[1]);
-  }
+  const declared = declaredCitationCommands(sources);
   return sources.flatMap((source) => {
     const result = deleteTexCitations(source.text, declared, removed);
     return result.text === source.text ? [] : [{ path: source.path, previous: source.text, text: result.text }];
@@ -224,10 +215,7 @@ export function planCitationDeletion(config: ProjectConfig, bibliography: readon
   const removed = new Set(config.library ? config.importedItemKeys.map((key) => projectCitationKey(config, key)) : []);
   if (active) managedBibliographyKeys(active.text).forEach((key) => removed.add(key));
   const changes: ProjectFileChange[] = [];
-  const declared = new Map<string, boolean>();
-  for (const source of tex) for (const definition of texCode(source.text).matchAll(/\\Declare(Multi)?CiteCommand\*?\s*\{\s*\\([a-zA-Z]+)\s*\}/g)) {
-    declared.set(definition[2]!, !!definition[1]);
-  }
+  const declared = declaredCitationCommands(tex);
   let citationCount = 0;
   for (const source of tex) {
     const result = deleteTexCitations(source.text, declared);

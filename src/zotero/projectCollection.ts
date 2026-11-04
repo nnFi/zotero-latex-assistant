@@ -5,7 +5,7 @@ import { BetterBibtexClient } from "./betterBibtex";
 import { planCollectionChange } from "../biblatex/collectionChange";
 import { resolveBibliographyPresence } from "../biblatex/presence";
 import { isImportableItem } from "../biblatex/selection";
-import { projectTexSources } from "../biblatex/scientificWorkflow";
+import { readProjectSources } from "../config/projectSources";
 import { isTrashedData, libraryPrefix, validateKey } from "./validation";
 
 /** Same binding and cleanup rules as the extension's Set library command. */
@@ -25,7 +25,7 @@ export async function setProjectCollection(root: string, options: ZoteroClientOp
   const same = sameDatabase && base.collectionKey === next.collectionKey;
   const changedCollection = sameDatabase && base.collectionKey !== next.collectionKey;
   const readSources = async () => {
-    const sources = await projectTexSources(root, true);
+    const sources = await readProjectSources(root, true);
     if (base.bibFile && !sources.some((source) => source.path === base.bibFile)) {
       const text = await readProjectText(root, base.bibFile);
       if (text !== undefined) sources.push({ path: base.bibFile, text });

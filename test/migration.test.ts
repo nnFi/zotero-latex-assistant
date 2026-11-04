@@ -9,6 +9,16 @@ const config: ProjectConfig = { version: 1, library: { type: "user", id: 0 }, co
   citationStyle: "authoryear", citationCommand: "autocite", importedItemKeys: ["ITEM0001"], citationKeys: { ITEM0001: "Old2024" } };
 const targets = { ITEM0001: "New2025" };
 
+test("Escaped citation declarations cannot authorize rewriting unrelated command arguments", () => {
+  const tex = [
+    { path: "style.sty", text: String.raw`\\DeclareCiteCommand{\example}{pre}{loop}{sep}{post}` },
+    { path: "main.tex", text: String.raw`Keep \example{Old2024}.` },
+  ];
+  const plan = planCitationKeyMigration(config, [{ path: "refs.bib", text: "@book{Old2024,title={Keep}}" }], tex, targets);
+  assert.equal(plan.referenceCount, 0);
+  assert.deepEqual(plan.changes.map((change) => change.path), ["refs.bib"]);
+});
+
 test("Migration changes entry keys, project mapping, literal citations and bibliography references together", () => {
   const bib = mergeBibliography('@book{manual,title={Old2024},crossref={Old2024}}\n', ['@book{Old2024,title={Keep metadata},year=2024}']);
   const plan = planCitationKeyMigration(config, [{ path: "refs.bib", text: bib }],

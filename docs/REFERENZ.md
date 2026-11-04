@@ -46,8 +46,15 @@ anschließend setzt er genau die gewählte Datei. Ohne Treffer wird nichts geset
 
 ## Entwicklung starten
 
-Voraussetzungen: Node.js ab Version 20, npm, VS Code ab Version 1.95 und
-eine Zotero-Desktopversion mit lokaler API.
+Voraussetzungen für Entwicklung und Paketbau: Node.js ab Version 22, npm,
+VS Code ab Version 1.95 und eine Zotero-Desktopversion mit lokaler API.
+Das Paketierungswerkzeug `@vscode/vsce` benötigt Node.js 22 oder neuer;
+für den fertig gebündelten MCP-Server genügt weiterhin Node.js 20.
+
+Für `@vscode/vsce` ist in `package.json` gezielt `minimatch@11.0.4` vorgegeben.
+Damit wird die [behobene Schwachstelle in älteren minimatch-Versionen](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+vermieden. Die Vorgabe beim nächsten Update des Paketierungswerkzeugs prüfen
+und entfernen, sobald dessen eigener Versionsbereich eine korrigierte Version nutzt.
 
 1. Den Projektordner in VS Code öffnen.
 2. Im Terminal `npm install` ausführen (bei vorhandener Lockdatei alternativ `npm ci`).

@@ -44,6 +44,16 @@ export function texCommandMatches(code: string, pattern: RegExp): RegExpMatchArr
   });
 }
 
+/** Custom citation commands apply across files; comments, examples and escaped declarations do not. */
+export function declaredCitationCommands(sources: readonly { readonly text: string }[]): ReadonlyMap<string, boolean> {
+  const commands = new Map<string, boolean>();
+  for (const source of sources) {
+    const definitions = texCommandMatches(texCode(source.text), /\\Declare(Multi)?CiteCommand\*?\s*\{\s*\\([a-zA-Z]+)\s*\}/g);
+    for (const definition of definitions) commands.set(definition[2]!, Boolean(definition[1]));
+  }
+  return commands;
+}
+
 export interface TexArgument { readonly start: number; readonly end: number; readonly content: string }
 export function texArgument(code: string, start: number, open: string, close: string): TexArgument | undefined {
   while (start < code.length && /\s/.test(code[start]!)) start++;

@@ -1,19 +1,27 @@
 # CSL locale terms
 
+This software uses locale data from the **Citation Style Language (CSL) project**:
+[CitationStyles.org](https://citationstyles.org/).
+
 The page and chapter terms in `src/zotero/localeTerms.ts` are adapted (extracted) from the [Citation Style Language locales repository](https://github.com/citation-style-language/locales), retrieved 2026-10-11. Primary dialect mappings come from its `locales.json`.
 
 These data are licensed under [Creative Commons Attribution-ShareAlike 3.0](https://creativecommons.org/licenses/by-sa/3.0/). The extracted term data are distributed under the same license. Changes: only singular/plural short page terms and singular chapter terms are retained, with long forms used where short forms are absent; converted from XML to TypeScript.
 
+The full license is included in `licenses/CC-BY-SA-3.0.txt` and
+`THIRD-PARTY-NOTICES.md`. These data are excluded from the project's MIT license.
+The source file is `src/zotero/localeTerms.ts`; its generated JavaScript data
+retain the same license when included in the extension or MCP bundle.
+
 Locale contributors, as credited in each source file:
 
-- **af-ZA**: 
+- **af-ZA**:
 - **ar**: Mazen Amria, abdealikhurrum, Dr. Ayman Saleh
 - **bal-PK**: عثمان
 - **bg-BG**: Valeriya Simeonova
 - **brh-PK**: عثمان
 - **ca-AD**: anidal, javimat, jotaemi
 - **cs-CZ**: nosaal, Andrew Dunning, libora, Michal Hoftich
-- **cy-GB**: 
+- **cy-GB**:
 - **da-DK**: Niels Erik Wille, Jonas Nyrup, hafnius, mufalab
 - **de-AT**: Till A. Heilmann, Georg Duffner, Sebastian Karcher, Sylvester Keil, jakov, Frank Bennett, Patrick O'Brien, Nicolas Chachereau
 - **de-CH**: Till A. Heilmann, Sylvester Keil, jakov, Sebastian Karcher, Patrick O'Brien, Nicolas Chachereau
@@ -40,13 +48,13 @@ Locale contributors, as credited in each source file:
 - **is-IS**: dadamaster, styrmirm, magnimarels
 - **it-IT**: Filippo Vomiero, Pietro Liuzzo
 - **ja-JP**: Shoji Takahashi, cmplstofB
-- **km-KH**: 
-- **ko-KR**: 
+- **km-KH**:
+- **ko-KR**:
 - **la**: Andrew Dunning
 - **lij-IT**: Jean Maillard
 - **lt-LT**: Valdemaras Klumbys
 - **lv-LV**: Andris Lupgins, Kristiāns Francis Cagulis, Andrew Dunning
-- **mn-MN**: 
+- **mn-MN**:
 - **ms-MY**: Fareed Sairi, Farah Diba Abu Bakar
 - **nb-NO**: Guttorm Flatabø, Stian Øby Johansen
 - **nl-NL**: Rintze M. Zelle, K. Avonts, ZambiblasianOgre, H. Stroom
@@ -59,7 +67,7 @@ Locale contributors, as credited in each source file:
 - **ru-RU**: Alexei Kouprianov
 - **sk-SK**: Tomáš Ferianc, kohafan, Peter Kubala
 - **sl-SI**: Kristof Ostir, ratek1, Uroš Mikanovič
-- **sr-Cyrl-RS**: 
+- **sr-Cyrl-RS**:
 - **sr-Latn-RS**: Nikola N. Grubor
 - **sv-SE**: torfeur, Sylvester Keil, Sebastian Karcher, Ulf Harnhammar, Julian Lenell
 - **th-TH**: Dusit Laohasinnarong, Watcharakorn Kaobath

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deleteTexCitations, planCitationDeletion, citationDeletionPreview } from "../src/biblatex/deletion";
+import { deleteTexCitations, planCitationDeletion, planTexCitationRemoval, citationDeletionPreview } from "../src/biblatex/deletion";
 import { newProjectConfig, withProjectLibrary } from "../src/config/project";
 import { bibEntries, mergeBibliography } from "../src/biblatex/importer";
 import { bibliographyRecords } from "../src/biblatex/fields";
@@ -47,6 +47,17 @@ test("Locally declared citation commands are recognized across project files", (
   assert.equal(plan.changes.find((change) => change.path === "main.tex")?.text, 'Text  and .');
   assert.equal(plan.changes.some((change) => change.path === "style.sty"), false);
   assert.equal(plan.citationCount, 3);
+});
+
+test("Escaped citation declarations do not turn unrelated commands into citations", () => {
+  const sources = [
+    { path: "style.sty", text: String.raw`\\DeclareCiteCommand{\example}{pre}{loop}{sep}{post}` },
+    { path: "main.tex", text: String.raw`Keep \example{Parent2024}.` },
+  ];
+  assert.deepEqual(planTexCitationRemoval(sources, new Set(["Parent2024"])), []);
+  const reset = planCitationDeletion(config, [], sources);
+  assert.deepEqual(reset.changes, []);
+  assert.equal(reset.citationCount, 0);
 });
 
 test("Reset clears every managed entry and mapping while preserving unrelated bibliography fields and macros", () => {

@@ -1,6 +1,6 @@
 import { CONFIG_FILE, discoverBibFile, newProjectConfig, parseProjectConfig, readProjectText, validateBibFile, writeProjectChanges } from "../config/project";
 import { planProjectBibFile } from "../biblatex/bibFile";
-import { projectTexSources } from "../biblatex/scientificWorkflow";
+import { readProjectSources } from "../config/projectSources";
 import { listInstalledBiblatexStyles } from "../biblatex/styles";
 
 /** Project-local setup without a Zotero connection. Never manufacture a bibliography. */
@@ -8,7 +8,7 @@ export async function setProjectBibFile(root: string, requested?: string, dryRun
   if (requested !== undefined) validateBibFile(requested);
   const snapshot = await readProjectText(root, CONFIG_FILE);
   const config = snapshot === undefined ? newProjectConfig() : parseProjectConfig(JSON.parse(snapshot));
-  const sources = await projectTexSources(root, true);
+  const sources = await readProjectSources(root, true);
   const candidates = sources.filter((source) => source.path.endsWith(".bib")).map((source) => source.path);
   const tex = sources.filter((source) => !source.path.endsWith(".bib"));
   const oldBib = config.bibFile ? await readProjectText(root, config.bibFile) : undefined;
@@ -24,7 +24,7 @@ export async function setProjectBibFile(root: string, requested?: string, dryRun
   }
   // Recheck both discovery and saved contents before changing any files.
   if (await readProjectText(root, CONFIG_FILE) !== snapshot
-    || JSON.stringify(await projectTexSources(root, true)) !== JSON.stringify(sources)
+    || JSON.stringify(await readProjectSources(root, true)) !== JSON.stringify(sources)
     || (config.bibFile && await readProjectText(root, config.bibFile) !== oldBib)
     || await readProjectText(root, bibFile) !== selectedBib) {
     throw new Error("Project files changed during .bib selection. Retry.");

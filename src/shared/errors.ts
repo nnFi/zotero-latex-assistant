@@ -12,7 +12,7 @@ export type ZoteroErrorCode =
   | "WRITE_UNSUPPORTED"
   | "BUSY";
 
-/** Einheitliche Fehler für die Oberfläche und den späteren MCP-Server. */
+/** Einheitliche Fehler für die Oberfläche und den MCP-Server. */
 export class ZoteroError extends Error {
   readonly status: number | undefined;
   constructor(

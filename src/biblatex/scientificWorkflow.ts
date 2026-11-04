@@ -1,5 +1,5 @@
-import { readdir } from "node:fs/promises";
-import { CONFIG_FILE, projectPath, readProjectText, writeProjectChanges } from "../config/project";
+import { readProjectSources } from "../config/projectSources";
+import { CONFIG_FILE, readProjectText, writeProjectChanges } from "../config/project";
 import type { ProjectConfig } from "../shared/types";
 import type { ZoteroClient, ZoteroClientOptions } from "../zotero/client";
 import { BetterBibtexClient } from "../zotero/betterBibtex";
@@ -12,29 +12,12 @@ import { planBibliographyUpdate, completeBibliographyUpdate } from "./update";
 import { bibliographyReferenceKeys } from "./migration";
 import { isTrashedData } from "../zotero/validation";
 
-export async function projectTexSources(root: string, includeBibliographies = false): Promise<{ path: string; text: string }[]> {
-  const sources: { path: string; text: string }[] = [];
-  const walk = async (relative: string): Promise<void> => {
-    for (const entry of await readdir(relative ? await projectPath(root, relative) : root, { withFileTypes: true })) {
-      if (entry.isSymbolicLink()) continue;
-      const file = relative ? `${relative}/${entry.name}` : entry.name;
-      if (entry.isDirectory() && ![".git", ".zotero", ".codex", ".claude", ".cursor", "node_modules", "dist", "build", "out"].includes(entry.name)) await walk(file);
-      if (entry.isFile() && (/\.(tex|ltx|sty|cls)$/.test(entry.name) || (includeBibliographies && entry.name.endsWith(".bib")))) {
-        const text = await readProjectText(root, file);
-        if (text !== undefined) sources.push({ path: file, text });
-      }
-    }
-  };
-  await walk("");
-  return sources.sort((a, b) => a.path.localeCompare(b.path));
-}
-
 /** Import only missing explicit citations. Existing manually selected bibliography entries are preserved. */
 export async function syncCitedBibliography(root: string, config: ProjectConfig, snapshot: string, client: ZoteroClient,
   options: ZoteroClientOptions, backend: "native" | "better-biblatex", dryRun: boolean, checkProject: () => Promise<void>) {
   if (!config.library || !config.bibFile) throw new Error("Set the project library and .bib file first.");
   const library = config.library;
-  const sources = await projectTexSources(root);
+  const sources = await readProjectSources(root);
   const citedKeys = referencedCitationKeys(sources);
   const previous = await readProjectText(root, config.bibFile);
   const bibliography = previous ?? "";
@@ -94,7 +77,7 @@ export async function syncCitedBibliography(root: string, config: ProjectConfig,
       throw new Error("A cited source changed during export. Retry.");
     }
   }
-  if (JSON.stringify(await projectTexSources(root)) !== JSON.stringify(sources)) throw new Error("LaTeX files changed during bibliography preparation. Retry.");
+  if (JSON.stringify(await readProjectSources(root)) !== JSON.stringify(sources)) throw new Error("LaTeX files changed during bibliography preparation. Retry.");
   await checkProject();
   const backup = await writeProjectChanges(root, [
     { path: config.bibFile, previous, text: result.text },

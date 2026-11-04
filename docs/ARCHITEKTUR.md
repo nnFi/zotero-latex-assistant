@@ -11,7 +11,7 @@ Stand: 12. Oktober 2026. Der Projektauftrag ist in
 | `src/config/` | Maschineneinstellungen und `.zotero/config.json` | Validierte Projektzuordnung, Dateischutz und Bib-Erkennung |
 | `src/zotero/` | Transportneutraler Zugriff auf Zotero | Leseclient, Detail-/Exportabruf, CSL-Dateiliste, Anhangsmetadaten, lokale Autorisierung, Neuanlage, partielles Update, Papierkorb und PDF-Dateiweitergabe |
 | `src/biblatex/` | Export, sichere Dateizusammenführung und Zitationen | Nativer Export, geschützter Import und Einfügen von Zitationen |
-| `src/pdf/` | Historische Platzhalter | Keine lokale Textextraktion auf Benutzerwunsch; Agent erhält PDF-Dateien |
+| `src/zotero/attachmentFiles.ts`, `src/zotero/pdfImport.ts` | Lokale PDF-Dateien | Dateiprüfung und Anhangsimport; Agent erhält PDF-Dateien ohne lokale Textextraktion |
 | `src/research/` | Externe Recherche und Metadatenverifikation | Crossref-DOI-/Titelsuche mit Metadatenvorschau |
 | `src/shared/` | Typen und einheitliche Fehler | Vorhanden |
 | `mcp/` | Eigenständiger Prozess über stdio | 33 Werkzeuge für Codex, Claude und andere lokale MCP-Clients |
