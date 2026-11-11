@@ -89,7 +89,7 @@ interface Audit {
   comparison: CitationComparison;
   pubcheckUnavailable: boolean;
   nextOffset: number;
-  pages: Map<number, Promise<AuditPage>>;
+  lastPage?: { offset: number; result: Promise<AuditPage> };
 }
 
 /** Keep a stable input snapshot and provider state across pages of one audit. */
@@ -124,7 +124,7 @@ export class BibliographyAudit {
     const id = randomUUID();
     const audit: Audit = { expires: Date.now() + lifetime, entries, literature: new Literature(this.makeRun()), bibFile, candidates,
       comparison: compareCitations(latex, records.filter((entry) => entry.type !== "xdata").map((entry) => entry.key)),
-      pubcheckUnavailable: false, nextOffset: 0, pages: new Map() };
+      pubcheckUnavailable: false, nextOffset: 0 };
     if (paged) {
       this.audits.set(id, audit);
       setTimeout(() => this.audits.delete(id), lifetime).unref();
@@ -145,13 +145,11 @@ export class BibliographyAudit {
   }
 
   private page(id: string, audit: Audit, offset: number) {
-    const saved = audit.pages.get(offset);
-    if (saved) return saved;
+    if (audit.lastPage?.offset === offset) return audit.lastPage.result;
     if (offset !== audit.nextOffset) throw new Error("Use the continuation token returned by the preceding bibliography page.");
-    const page = this.checkPage(id, audit, offset);
-    audit.pages.clear();
-    audit.pages.set(offset, page);
-    return page;
+    const result = this.checkPage(id, audit, offset);
+    audit.lastPage = { offset, result };
+    return result;
   }
 
   private async checkPage(id: string, audit: Audit, offset: number): Promise<AuditPage> {

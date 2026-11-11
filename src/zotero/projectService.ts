@@ -28,7 +28,7 @@ import { importLocalPdf } from "./pdfImport";
 import { createSourceNote, noteContent, sourceNote } from "./notes";
 import { syncCitedBibliography } from "../biblatex/scientificWorkflow";
 import { Literature, publicWork, type Work } from "../research/literature";
-import { ProviderRun, ResearchFailure, type ResearchEvidence } from "../research/providerRun";
+import { ProviderRun, requireRecord, ResearchFailure, type ResearchEvidence } from "../research/providerRun";
 import { bibliographyRecords } from "../biblatex/fields";
 import { assertCollectionDeletionAllowed, collectionSubtree, createProjectCollection } from "./collectionOperations";
 import { setProjectCollection } from "./projectCollection";
@@ -324,37 +324,36 @@ export class ZoteroProjectService {
       const run = this.researchRun();
       const literature = new Literature(run);
       let identifiers = identifier ? [identifier.value] : [];
-      if (identifier?.kind !== "isbn") {
-        if (identifier) {
-          const lookup = await literature.lookup("openalex", identifier.value);
-          if (lookup.value?.title) openAlexMatches.push(publicWork(lookup.value));
-          evidence.push(lookup.value && !lookup.value.title
-            ? { ...lookup.evidence, status: "incomplete", reason: "OpenAlex returned a work without a usable title." } : lookup.evidence);
-          if (openAlexMatches.length) identifiers = [];
+      if (identifier?.kind === "doi") {
+        const lookup = await literature.lookup("openalex", identifier.value);
+        if (lookup.value?.title) {
+          openAlexMatches.push(publicWork(lookup.value));
+          identifiers = [];
+        }
+        evidence.push(lookup.value && !lookup.value.title
+          ? { ...lookup.evidence, status: "incomplete", reason: "OpenAlex returned a work without a usable title." } : lookup.evidence);
+      } else if (!identifier) {
+        const search = await literature.search("openalex", query, limit);
+        evidence.push(search.evidence);
+        if (search.value) {
+          openAlexMatches.push(...search.value.map(publicWork));
         } else {
-          const search = await literature.search("openalex", query, limit);
-          evidence.push(search.evidence);
-          if (search.value) openAlexMatches.push(...search.value.map(publicWork));
-          else {
-            const fallback = await literature.search("crossref", query, limit);
-            evidence.push(fallback.evidence);
-            identifiers = fallback.value?.map((work) => work.id) ?? [];
-          }
+          const fallback = await literature.search("crossref", query, limit);
+          evidence.push(fallback.evidence);
+          identifiers = fallback.value?.map((work) => work.id) ?? [];
         }
       }
+      const request = async (url: URL) => {
+        const provider = url.hostname === "api.crossref.org" ? "crossref" : url.hostname === "api.datacite.org" ? "datacite" : "openlibrary";
+        const lookup = await run.json(provider, url, requireRecord);
+        evidence.push(lookup.evidence);
+        if (lookup.evidence.status !== "ok" && lookup.evidence.status !== "not-found") throw new Error(lookup.evidence.reason);
+        return lookup.value;
+      };
       for (const value of identifiers) {
         const start = evidence.length;
         try {
-          candidates.push(await this.resolveIdentifier(scope, value, async (url) => {
-            const provider = url.hostname === "api.crossref.org" ? "crossref" : url.hostname === "api.datacite.org" ? "datacite" : "openlibrary";
-            const lookup = await run.json(provider, url, (body) => {
-              if (!isRecord(body)) throw new Error("Invalid identifier response.");
-              return body;
-            });
-            evidence.push(lookup.evidence);
-            if (lookup.evidence.status !== "ok" && lookup.evidence.status !== "not-found") throw new Error(lookup.evidence.reason);
-            return lookup.value;
-          }));
+          candidates.push(await this.resolveIdentifier(scope, value, request));
         }
         catch (error) {
           const message = error instanceof Error ? error.message : "Identifier verification failed.";

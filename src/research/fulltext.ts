@@ -7,15 +7,43 @@ import { gunzipSync } from "node:zlib";
 import { normalizedDoi, normalizedText } from "../biblatex/duplicates";
 import { isRecord } from "../zotero/validation";
 import { inspectHtml, xmlSections, type ArticleSection } from "./articleContent";
-import { compareAuthor, doiUrl, Literature, safeUrl, text, validDoi, type Reference } from "./literature";
-import { evidence, readLimited, ResearchFailure, type ResearchEvidence } from "./providerRun";
+import { compareAuthor, doiUrl, Literature, text, validDoi, type Reference } from "./literature";
+import { evidence, readLimited, requireRecord, ResearchFailure, safeUrl, type ResearchEvidence } from "./providerRun";
 import { getPublicDocument, type DocumentRequest } from "./publicDocuments";
 
 type Content = { format: "pdf"; bytes: Buffer } | { format: "xml" | "html"; sections: ArticleSection[] };
 type Document = { content: Content | null; links: string[]; archives: string[]; restricted?: boolean;
-  doi?: string | null; title?: string | undefined; authors?: string[]; url: URL };
+  doi?: string | null; title?: string | undefined; authors?: string[] };
+type FoundDocument = { sourceUrl: string; content: Content };
 interface FulltextFile { localPath: string; fileUri: string; byteSize: number; sha256: string }
 const MiB = 1024 * 1024;
+const textLimit = 8 * MiB;
+const pdfLimit = 40 * MiB;
+
+async function readDocument(response: Response, url: URL): Promise<Document> {
+  const mime = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const limit = /(?:text\/|xml|html|json)/.test(mime) ? textLimit : pdfLimit;
+  let bytes = await readLimited(response, limit);
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    try { bytes = gunzipSync(bytes, { maxOutputLength: limit }); }
+    catch { throw new ResearchFailure("incomplete", "Compressed content is invalid or too large."); }
+  }
+  const noLinks = { links: [], archives: [] };
+  if (bytes.subarray(0, 5).equals(Buffer.from("%PDF-")) && bytes.subarray(-2048).includes(Buffer.from("%%EOF"))) {
+    return { ...noLinks, content: { format: "pdf", bytes } };
+  }
+  if (bytes.length > textLimit) throw new ResearchFailure("incomplete", "Non-PDF content exceeds the size limit.");
+  const source = bytes.toString("utf8").trim();
+  if (/xml/.test(mime) || /^<(?:\?xml\b|(?:[\w.-]+:)?(?:TEI|article)(?:\s|>))/.test(source)) {
+    const sections = xmlSections(source);
+    if (sections.length) return { ...noLinks, content: { format: "xml", sections } };
+  }
+  if (/html/.test(mime) || /^<(?:!doctype html|html|head|body|article)\b/i.test(source)) {
+    const html = inspectHtml(source, url);
+    return { ...html, content: html.sections.length ? { format: "html", sections: html.sections } : null };
+  }
+  return { ...noLinks, content: null };
+}
 
 async function temporaryDocument(filename: string, bytes: Buffer): Promise<FulltextFile> {
   const directory = await mkdtemp(join(tmpdir(), "zotero-fulltext-"));
@@ -46,15 +74,10 @@ function firstAuthorOf(value: unknown): string {
   return isRecord(first) ? text(first.text) || text(first.name) : text(first);
 }
 function archiveMatch(reference: Reference, doi: string | undefined, title: string, author: string, year: unknown) {
-  if (doi && reference.doi && doi === reference.doi) return true;
-  if (doi && reference.doi && doi !== reference.doi) return false;
+  if (doi && reference.doi) return doi === reference.doi;
   return Boolean(reference.title && reference.authors?.[0] && normalizedText(reference.title) === normalizedText(title)
     && compareAuthor(reference.authors[0], author) === "match"
     && (!reference.year || !year || String(year).slice(0, 4) === String(reference.year)));
-}
-function object(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) throw new Error("Invalid archive record.");
-  return value;
 }
 function archiveLinks(values: unknown[]) {
   return [...new Set(values.flatMap((value) => safeUrl(value) ?? []))];
@@ -77,38 +100,13 @@ class FulltextRun {
       const fetched = await this.download(url, signal, provider === "openalex-content" ? this.literature.run.openAlexKey : undefined);
       final = fetched.url;
       return fetched.response;
-    }, async (result): Promise<Document> => {
-      const mime = result.headers.get("content-type")?.toLowerCase() ?? "";
-      const nonPdf = /(?:text\/|xml|html|json)/.test(mime);
-      let bytes = await readLimited(result, nonPdf ? 8 * MiB : 40 * MiB);
-      if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
-        try { bytes = gunzipSync(bytes, { maxOutputLength: nonPdf ? 8 * MiB : 40 * MiB }); }
-        catch { throw new ResearchFailure("incomplete", "Compressed content is invalid or too large."); }
-      }
-      const base = { url: final, links: [], archives: [] };
-      if (bytes.subarray(0, 5).equals(Buffer.from("%PDF-")) && bytes.subarray(-2048).includes(Buffer.from("%%EOF"))) {
-        return { ...base, content: { format: "pdf", bytes } };
-      }
-      if (bytes.length > 8 * MiB) throw new ResearchFailure("incomplete", "Non-PDF content exceeds the size limit.");
-      const source = bytes.toString("utf8").trim();
-      if (/xml/.test(mime) || /^<(?:\?xml\b|(?:[\w.-]+:)?(?:TEI|article)(?:\s|>))/.test(source)) {
-        const sections = xmlSections(source);
-        if (sections.length) return { ...base, content: { format: "xml", sections } };
-      }
-      if (/html/.test(mime) || /^<(?:!doctype html|html|head|body|article)\b/i.test(source)) {
-        const html = inspectHtml(source, final);
-        return { ...html, url: final, content: html.sections.length ? { format: "html", sections: html.sections } : null };
-      }
-      return { ...base, content: null };
-    }, true, this.deadline);
+    }, (result) => readDocument(result, final), this.deadline);
     this.visited.add(final.href);
-    if (provider === "publisher" && final.href !== url.href) this.publicationUrl = final.href;
-    const item = response.value;
-    const event = { ...response.evidence, provider, sourceUrl: final.href };
-    return { item, event };
+    if (provider === "publisher" && final.href !== url.href) this.publicationUrl ??= final.href;
+    return { item: response.value, event: { ...response.evidence, provider, sourceUrl: final.href } };
   }
 
-  private async documents(urls: string[], provider: string, reference: Reference, follow = true): Promise<{ sourceUrl: string; content: Content } | null> {
+  private async documents(urls: string[], provider: string, reference: Reference, followLinks = true): Promise<FoundDocument | null> {
     for (const value of urls.slice(0, 6)) {
       const visit = await this.visit(new URL(value), provider);
       if (!visit) continue;
@@ -121,17 +119,17 @@ class FulltextRun {
         this.events.push({ ...event, status: "mismatch", reason: "The page identifies a different publication." });
         continue;
       }
-      if (provider === "publisher") this.publicationUrl ??= item.url.href;
+      if (provider === "publisher") this.publicationUrl ??= event.sourceUrl;
       if (!reference.title && item.title) reference.title = item.title;
       if (!reference.authors?.length && item.authors?.length) reference.authors = item.authors;
       item.archives.forEach((archive) => this.archives.add(archive));
       if (item.content) {
         this.events.push(event);
-        return { sourceUrl: item.url.href, content: item.content };
+        return { sourceUrl: event.sourceUrl, content: item.content };
       }
       this.events.push({ ...event, status: item.restricted ? "restricted" : "not-found",
         reason: item.restricted ? "The publisher marks the article as restricted." : "No readable full text in this response." });
-      if (follow) {
+      if (followLinks) {
         const found = await this.documents(item.links, provider, reference, false);
         if (found) return found;
       }
@@ -145,10 +143,10 @@ class FulltextRun {
     const url = new URL("https://dblp.org/search/publ/api");
     url.search = new URLSearchParams({ q: query.replace(/[+|$]/g, " "), format: "json", h: "10" }).toString();
     const lookup = await this.literature.run.json("dblp", url, (body) => {
-      const hits = object(object(body).result).hits;
-      const data = object(hits);
-      const entries = Array.isArray(data.hit) ? data.hit : data.hit ? [data.hit] : [];
-      const matches = entries.map((entry) => object(object(entry).info)).filter((item) =>
+      const result = requireRecord(requireRecord(body).result);
+      const { hit } = requireRecord(result.hits);
+      const entries = Array.isArray(hit) ? hit : hit ? [hit] : [];
+      const matches = entries.map((entry) => requireRecord(requireRecord(entry).info)).filter((item) =>
         archiveMatch(reference, normalizedDoi(text(item.doi)), text(item.title).replace(/\.$/, ""),
           firstAuthorOf(isRecord(item.authors) ? item.authors.author : undefined), item.year));
       if (!matches.length) throw new ResearchFailure("not-found", "DBLP returned no matching publication.");
@@ -169,30 +167,28 @@ class FulltextRun {
     const url = new URL("https://zenodo.org/api/records");
     url.search = new URLSearchParams({ q: terms.join(" OR "), size: "10" }).toString();
     const lookup = await this.literature.run.json("zenodo", url, (body) => {
-      const hits = object(object(body).hits).hits;
+      const { hits } = requireRecord(requireRecord(body).hits);
       if (!Array.isArray(hits)) throw new Error("Invalid Zenodo response.");
-      const records = hits.map(object);
-      const relatedVersions = records.filter((item) => {
-        const metadata = object(item.metadata);
+      const records = hits.map(requireRecord).map((item) => {
+        const metadata = requireRecord(item.metadata);
+        return { item, metadata, doi: normalizedDoi(text(metadata.doi) || text(item.doi)) };
+      });
+      const relatedVersions = records.filter(({ metadata, doi }) => {
         const related = Array.isArray(metadata.related_identifiers) ? metadata.related_identifiers.filter(isRecord) : [];
-        return Boolean(reference.doi && (normalizedDoi(text(metadata.doi) || text(item.doi)) === reference.doi
+        return Boolean(reference.doi && (doi === reference.doi
           || related.some((entry) => normalizedDoi(text(entry.identifier)) === reference.doi
             && /^(?:isidenticalto|isversionof|isnewversionof|ispreviousversionof|isvariantformof)$/i.test(text(entry.relation).replace(/[-_]/g, "")))));
       });
-      const matches = relatedVersions.length ? relatedVersions : records.filter((item) => {
-        const metadata = object(item.metadata);
-        const creator = firstAuthorOf(metadata.creators);
-        const doi = normalizedDoi(text(metadata.doi) || text(item.doi));
+      const matches = relatedVersions.length ? relatedVersions : records.filter(({ metadata, doi }) => {
         const primary = doi && !doi.startsWith("10.5281/zenodo.") ? doi : undefined;
-        return archiveMatch(reference, primary, text(metadata.title), creator, metadata.publication_date);
+        return archiveMatch(reference, primary, text(metadata.title), firstAuthorOf(metadata.creators), metadata.publication_date);
       });
       if (!relatedVersions.length && matches.length > 1) throw new ResearchFailure("ambiguous", "Several Zenodo records match the title and author.");
-      const links = archiveLinks(matches.flatMap((item) => {
-        const metadata = object(item.metadata);
+      const links = archiveLinks(matches.flatMap(({ item, metadata }) => {
         const open = metadata.access_right === "open" || (isRecord(item.access) && item.access.files === "public");
         if (!open || !Array.isArray(item.files)) return [];
-        return item.files.filter(isRecord).filter((file) => /\.(?:pdf|xml)$/i.test(text(file.key)) && isRecord(file.links))
-          .map((file) => object(file.links).content ?? object(file.links).self);
+        return item.files.filter(isRecord).flatMap(({ key, links }) =>
+          /\.(?:pdf|xml)$/i.test(text(key)) && isRecord(links) ? [links.content ?? links.self] : []);
       }));
       if (!matches.length) throw new ResearchFailure("not-found", "Zenodo returned no matching record.");
       if (!links.length) throw new ResearchFailure("not-found", "Matching Zenodo records have no public PDF or XML.");
@@ -204,10 +200,9 @@ class FulltextRun {
 
   async retrieve(input: Reference) {
     const reference = { ...input, doi: validDoi(input) };
-    const fromOpenAlex = await this.literature.identify("openalex", reference);
-    const work = fromOpenAlex.value && this.literature.usableIdentity(reference, fromOpenAlex.value) ? fromOpenAlex.value : null;
-    this.events.push(fromOpenAlex.value && !work ? { ...fromOpenAlex.evidence, status: "mismatch", reason: "Reference metadata does not match the work." } : fromOpenAlex.evidence);
-    let found: Awaited<ReturnType<FulltextRun["documents"]>> = null;
+    const { value: work, evidence: fromOpenAlex } = await this.literature.find("openalex", reference);
+    this.events.push(fromOpenAlex);
+    let found: FoundDocument | null = null;
     if (work) {
       reference.doi ??= work.doi ?? undefined;
       reference.title ??= work.title;
@@ -225,10 +220,9 @@ class FulltextRun {
     }
 
     if (!found && !reference.doi) {
-      const crossref = await this.literature.identify("crossref", input);
-      const matched = crossref.value && this.literature.usableIdentity(input, crossref.value) ? crossref.value : null;
-      this.events.push(crossref.value && !matched ? { ...crossref.evidence, status: "mismatch", reason: "Reference metadata does not match the work." } : crossref.evidence);
-      reference.doi = matched?.doi ?? undefined;
+      const { value: match, evidence: fromCrossref } = await this.literature.find("crossref", input);
+      this.events.push(fromCrossref);
+      reference.doi = match?.doi ?? undefined;
     }
     if (!found && reference.doi) found = await this.documents([doiUrl(reference.doi).href], "publisher", reference);
     if (!found) found = await this.documents([...this.archives], "linked-archive", reference);

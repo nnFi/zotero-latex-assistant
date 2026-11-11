@@ -2,8 +2,7 @@ import { lookup } from "node:dns";
 import { request, type RequestOptions } from "node:https";
 import { BlockList, isIP } from "node:net";
 import { Readable } from "node:stream";
-import { safeUrl } from "./literature";
-import { researchAgent, ResearchFailure } from "./providerRun";
+import { redirectStatuses, researchAgent, ResearchFailure, safeUrl } from "./providerRun";
 
 const blocked = new BlockList();
 for (const [prefix, length] of [
@@ -31,8 +30,6 @@ function publicTarget(url: URL) {
     throw new ResearchFailure("restricted", "The target is not a public HTTPS host.");
   }
 }
-
-const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 
 export type DocumentRequest = (url: URL, signal: AbortSignal, openAlexKey?: string) => Promise<{ response: Response; url: URL }>;
 

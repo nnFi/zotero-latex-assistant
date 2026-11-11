@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { APP_VERSION } from "../shared/version";
+import { isRecord } from "../zotero/validation";
 
 export const researchStatuses = ["ok", "not-found", "unavailable", "skipped", "mismatch", "incomplete", "ambiguous", "restricted"] as const;
 export type ResearchStatus = typeof researchStatuses[number];
@@ -16,6 +17,22 @@ export class ResearchFailure extends Error {
 }
 
 export const researchAgent = `ZoteroLaTeXAssistant/${APP_VERSION}`;
+export const redirectStatuses: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+
+export function requireRecord(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error("Invalid provider record.");
+  return value;
+}
+
+export function safeUrl(value: unknown): string | null {
+  if (typeof value !== "string" || value.length > 8192) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
+    url.hash = "";
+    return url.href;
+  } catch { return null; }
+}
 
 export async function readLimited(response: Response, limit: number): Promise<Buffer> {
   const reader = response.body?.getReader();
@@ -49,13 +66,14 @@ export class ProviderRun {
   constructor(readonly fetch: typeof globalThis.fetch = globalThis.fetch, readonly openAlexKey = process.env.OPENALEX_API_KEY?.trim()) {}
 
   async request<T>(provider: string, url: URL, load: (signal: AbortSignal) => Promise<Response>,
-    parse: (response: Response) => Promise<T>, publicDocument = false, deadline?: AbortSignal) {
+    parse: (response: Response) => Promise<T>, documentDeadline?: AbortSignal) {
     const result = (status: ResearchStatus, reason: string, value: T | null = null) =>
       ({ evidence: evidence(provider, url.href, status, reason), value });
     if (this.unavailable.has(provider)) return result("skipped", "Provider is unavailable for this run.");
     for (let attempt = 0; attempt < 2; attempt++) {
-      if (deadline?.aborted) return result("incomplete", "The operation reached its time limit.");
-      const signal = AbortSignal.any([AbortSignal.timeout(publicDocument ? 9000 : 5000), ...(deadline ? [deadline] : [])]);
+      if (documentDeadline?.aborted) return result("incomplete", "The operation reached its time limit.");
+      const timeout = AbortSignal.timeout(documentDeadline ? 9000 : 5000);
+      const signal = documentDeadline ? AbortSignal.any([timeout, documentDeadline]) : timeout;
       let wait = 250;
       let reason: string;
       try {
@@ -64,13 +82,13 @@ export class ProviderRun {
         await response.body?.cancel();
         const status = response.status;
         if ((status === 404 || status === 410) && provider !== "pubcheck") return result("not-found", `HTTP ${status}.`);
-        if (publicDocument && [401, 402, 403, 451].includes(status)) return result("restricted", `HTTP ${status}.`);
+        if (documentDeadline && [401, 402, 403, 451].includes(status)) return result("restricted", `HTTP ${status}.`);
         if (status === 408 || status === 429 || status >= 500) wait = retryDelay(response.headers.get("retry-after"));
         else wait = Infinity;
         reason = `Provider returned HTTP ${status}.`;
       } catch (error) {
         if (error instanceof ResearchFailure && error.status !== "unavailable") return result(error.status, error.message);
-        if (deadline?.aborted) return result("incomplete", "The operation reached its time limit.");
+        if (documentDeadline?.aborted) return result("incomplete", "The operation reached its time limit.");
         reason = error instanceof ResearchFailure ? error.message
           : signal.aborted ? "Request timed out." : "Provider request failed.";
         if (error instanceof ResearchFailure && !error.retryable) wait = Infinity;
@@ -95,7 +113,7 @@ export class ProviderRun {
       let target = url;
       for (let redirects = 0; ; redirects++) {
         const response = await this.fetch(target, { ...init, headers, signal, redirect: "manual" });
-        if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+        if (!redirectStatuses.has(response.status)) return response;
         await response.body?.cancel();
         const location = response.headers.get("location");
         if (provider !== "openalex" || !location || redirects >= 4) throw new ResearchFailure("unavailable", "Unexpected provider redirect.");

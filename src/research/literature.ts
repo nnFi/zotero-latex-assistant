@@ -1,6 +1,6 @@
 import { normalizedDoi, normalizedText } from "../biblatex/duplicates";
 import { isRecord } from "../zotero/validation";
-import { evidence, ProviderRun, ResearchFailure, type ResearchEvidence } from "./providerRun";
+import { evidence, ProviderRun, requireRecord, ResearchFailure, safeUrl, type ResearchEvidence } from "./providerRun";
 
 export interface Reference {
   doi?: string | undefined;
@@ -13,23 +13,9 @@ export const text = (value: unknown) => typeof value === "string" ? value.trim()
 export const countOf = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 export const doiUrl = (doi: string) => new URL(`https://doi.org/${encodeURIComponent(doi).replace(/%2F/i, "/")}`);
 
-export function safeUrl(value: unknown): string | null {
-  if (!value || typeof value !== "string" || value.length > 8192) return null;
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
-    url.hash = "";
-    return url.href;
-  } catch { return null; }
-}
-
-function record(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) throw new Error("Invalid provider record.");
-  return value;
-}
 function records(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) throw new Error("Invalid provider result list.");
-  return value.map(record);
+  return value.map(requireRecord);
 }
 function yearOf(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value >= 1000 && value <= 9999 ? value : undefined;
@@ -131,8 +117,9 @@ export function compareAuthor(expected: string, found: string): Comparison {
 
 function compareTitle(title: string | undefined, work: IndexedWork): Comparison {
   const normalized = normalizedText(title ?? "");
-  if (!normalized || !work.titles.some((value) => normalizedText(value))) return "unknown";
-  return work.titles.some((value) => normalizedText(value) === normalized) ? "match" : "mismatch";
+  const titles = work.titles.map(normalizedText).filter(Boolean);
+  if (!normalized || !titles.length) return "unknown";
+  return titles.includes(normalized) ? "match" : "mismatch";
 }
 function compareAuthors(authors: readonly string[] | undefined, work: IndexedWork): Comparison {
   if (!authors?.length || !work.authors.length) return "unknown";
@@ -147,6 +134,13 @@ function compareYear(year: number | undefined, work: IndexedWork): Comparison {
   return year === undefined || !work.years.length ? "unknown" : work.years.includes(year) ? "match" : "mismatch";
 }
 
+function matchesReference(reference: Reference, work: IndexedWork) {
+  const authors = reference.authors?.length === 1 ? compareAuthor(reference.authors[0]!, work.authors[0] ?? "")
+    : compareAuthors(reference.authors, work);
+  return compareTitle(reference.title, work) !== "mismatch" && authors !== "mismatch"
+    && compareYear(reference.year, work) !== "mismatch";
+}
+
 export class Literature {
   constructor(readonly run: ProviderRun) {}
 
@@ -155,7 +149,8 @@ export class Literature {
       ? new URL(`https://api.openalex.org/works/doi:${encodeURIComponent(doi).replace(/%2F/i, "/")}`)
       : new URL(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
     return this.run.json(provider, url, (body) => {
-      const work = provider === "openalex" ? openAlexWork(record(body)) : crossrefWork(record(record(body).message));
+      const record = requireRecord(body);
+      const work = provider === "openalex" ? openAlexWork(record) : crossrefWork(requireRecord(record.message));
       if (work.doi !== doi) throw new ResearchFailure(work.doi ? "mismatch" : "incomplete", "The provider did not return the requested DOI.");
       return work;
     });
@@ -172,8 +167,9 @@ export class Literature {
       url.searchParams.set("rows", String(limit));
     }
     return this.run.json(provider, url, (body) => {
-      const works = provider === "openalex" ? records(record(body).results).map(openAlexWork)
-        : records(record(record(body).message).items).map(crossrefWork);
+      const record = requireRecord(body);
+      const works = provider === "openalex" ? records(record.results).map(openAlexWork)
+        : records(requireRecord(record.message).items).map(crossrefWork);
       if (!works.length) throw new ResearchFailure("not-found", "Search returned no works.");
       const titled = works.filter((work) => normalizedText(work.title));
       if (!titled.length) throw new ResearchFailure("incomplete", "Search results have no usable titles.");
@@ -181,24 +177,25 @@ export class Literature {
     });
   }
 
-  async identify(provider: Index, reference: Reference) {
+  private async identify(provider: Index, reference: Reference) {
     const doi = validDoi(reference);
     if (doi) return this.lookup(provider, doi);
-    if (!reference.title || !reference.authors?.[0] || !normalizedText(reference.title) || !normalizedText(reference.authors[0])) {
+    const firstAuthor = reference.authors?.[0];
+    if (!reference.title || !firstAuthor || !normalizedText(reference.title) || !normalizedText(firstAuthor)) {
       return { value: null, evidence: evidence(provider, "", "incomplete", "Supply a DOI or both title and first author.") };
     }
-    const result = await this.search(provider, reference.title, 25, reference.authors[0]);
+    const result = await this.search(provider, reference.title, 25, firstAuthor);
     if (!result.value) return { ...result, value: null };
     const plausible = result.value.filter((work) => compareTitle(reference.title, work) === "match"
-      && compareAuthor(reference.authors![0]!, work.authors[0] ?? "") !== "mismatch");
-    const compatible = plausible.filter((work) => this.usableIdentity(reference, work));
+      && compareAuthor(firstAuthor, work.authors[0] ?? "") !== "mismatch");
+    const compatible = plausible.filter((work) => matchesReference(reference, work));
     const candidates = compatible.length ? compatible : plausible;
     const first = candidates[0];
     const report = (status: ResearchEvidence["status"], reason: string) =>
       ({ value: null, evidence: { ...result.evidence, status, reason } });
     if (candidates.length > 1) return report("ambiguous", "Multiple works match the title and author evidence.");
     if (!first) return report("not-found", "No result matches the title and first author.");
-    if (compareAuthor(reference.authors[0], first.authors[0] ?? "") !== "match") return report("incomplete", "First author is missing from the potential match.");
+    if (compareAuthor(firstAuthor, first.authors[0] ?? "") !== "match") return report("incomplete", "First author is missing from the potential match.");
     return { evidence: { ...result.evidence, sourceUrl: first.sourceUrl }, value: first };
   }
 
@@ -224,20 +221,28 @@ export class Literature {
     return { results, doiConflict: dois.size > 1, contentVerified: false as const };
   }
 
+  async find(provider: Index, reference: Reference) {
+    const lookup = await this.identify(provider, reference);
+    if (lookup.value && !matchesReference(reference, lookup.value)) {
+      return { value: null, evidence: { ...lookup.evidence, status: "mismatch" as const, reason: "Reference metadata does not match the work." } };
+    }
+    return lookup;
+  }
+
   async citations(reference: Reference, page: number, limit: number) {
-    const lookup = await this.identify("openalex", reference);
-    const work = lookup.value && this.usableIdentity(reference, lookup.value) ? lookup.value : null;
-    const events = [lookup.value && !work ? { ...lookup.evidence, status: "mismatch" as const, reason: "Reference metadata does not match the work." } : lookup.evidence];
+    const { value: work, evidence: source } = await this.find("openalex", reference);
+    const events = [source];
     const counts = [];
     let citing: Work[] | null = null, nextPage: number | null = null, citingSource: ResearchEvidence | null = null;
     if (work) {
-      if (work.count !== null) counts.push({ value: work.count, provider: work.provider, sourceUrl: work.sourceUrl, checkedAt: lookup.evidence.checkedAt });
+      if (work.count !== null) counts.push({ value: work.count, provider: work.provider, sourceUrl: work.sourceUrl, checkedAt: source.checkedAt });
       else events.push(evidence("openalex", work.sourceUrl, "incomplete", "Citation count is missing."));
       const url = new URL("https://api.openalex.org/works");
       url.search = new URLSearchParams({ filter: `cites:${work.id}`, page: String(page), per_page: String(limit), sort: "publication_date:desc" }).toString();
       const list = await this.run.json("openalex", url, (body) => {
-        const results = records(record(body).results).map(openAlexWork);
-        const total = countOf(record(record(body).meta).count);
+        const record = requireRecord(body);
+        const results = records(record.results).map(openAlexWork);
+        const total = countOf(requireRecord(record.meta).count);
         if (total === null || (total > (page - 1) * limit && !results.length)) {
           throw new ResearchFailure("incomplete", "Citing-works response is incomplete.");
         }
@@ -251,19 +256,11 @@ export class Literature {
       }
     }
     if (!counts.length || citing === null) {
-      const fallback = await this.identify("crossref", { ...reference, doi: reference.doi || work?.doi || undefined });
-      const matched = fallback.value && this.usableIdentity(reference, fallback.value) ? fallback.value : null;
-      events.push(fallback.value && !matched ? { ...fallback.evidence, status: "mismatch", reason: "Reference metadata does not match the work." } :
-        matched?.count === null ? { ...fallback.evidence, status: "incomplete", reason: "Crossref citation count is missing." } : fallback.evidence);
-      if (matched?.count != null) counts.push({ value: matched.count, provider: matched.provider, sourceUrl: matched.sourceUrl, checkedAt: fallback.evidence.checkedAt });
+      const { value: matched, evidence: fallback } = await this.find("crossref", { ...reference, doi: reference.doi || work?.doi || undefined });
+      events.push(matched?.count === null ? { ...fallback, status: "incomplete", reason: "Crossref citation count is missing." } : fallback);
+      if (matched?.count != null) counts.push({ value: matched.count, provider: matched.provider, sourceUrl: matched.sourceUrl, checkedAt: fallback.checkedAt });
     }
     return { count: counts[0] ?? null, counts, citing, citingSource, page, nextPage, evidence: events };
   }
 
-  usableIdentity(reference: Reference, work: IndexedWork) {
-    const authors = reference.authors?.length === 1 ? compareAuthor(reference.authors[0]!, work.authors[0] ?? "")
-      : compareAuthors(reference.authors, work);
-    return compareTitle(reference.title, work) !== "mismatch" && authors !== "mismatch"
-      && compareYear(reference.year, work) !== "mismatch";
-  }
 }

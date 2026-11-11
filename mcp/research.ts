@@ -33,10 +33,10 @@ const citationComparison = z.object({ status: z.enum(["compared", "incomplete"])
 export function registerResearchTools(tool: ToolRegistrar, service: ZoteroProjectService, pubcheck: z.ZodType) {
   const literature = () => new Literature(service.researchRun());
   const audit = new BibliographyAudit(() => service.researchRun());
-  tool("zotero_check_reference", "Check the original title, ordered authors (use 'Family, Given' or display names), year and DOI. With a DOI query Crossref then OpenAlex; without one query OpenAlex then Crossref using title and first author. Both providers are checked and each field comparison and source is returned separately. Without a DOI supply at least title and first author. Report mismatches, no matches, outages and incomplete evidence separately. A bibliographic match does not verify a claim.",
+  tool("zotero_check_reference", "Compare the original title, ordered authors and year. With a DOI, check Crossref then OpenAlex. Otherwise supply title and first author to check OpenAlex then Crossref. Results show field comparisons and evidence from both providers.",
     referenceInput, referenceOutput, (reference) => literature().check(reference), { openWorld: true });
 
-  tool("zotero_check_bibliography", "Check a saved project .bib or supplied BibTeX. For a project use projectPath when launched globally and bibFile only to select an existing project-relative .bib. For inline input supply bibtex and optional latex. Checks up to five entries at a time: PubCheck, then the two reference indexes in their DOI-dependent order. If PubCheck is unavailable, compare local or supplied LaTeX citation keys against the audited bibliography; project text stays local. Continue with nextToken alone within 30 minutes. Return ambiguous project bibliography choices for the user to select. Does not modify files or Zotero.",
+  tool("zotero_check_bibliography", "Check a project .bib (projectPath and optional project-relative bibFile) or pass bibtex with optional latex. Each page checks up to five entries with PubCheck, then Crossref and OpenAlex. A PubCheck outage triggers a local LaTeX citation-key comparison. Continue with nextToken alone within 30 minutes. If several .bib files are possible, ask the user to choose.",
     z.object({ projectPath: z.string().min(1).optional(), bibFile: z.string().min(1).optional(),
       bibtex: z.string().max(2_000_000).optional(), latex: z.string().max(2_000_000).optional(),
       nextToken: z.string().regex(/^[a-f0-9-]{36}:\d+$/).optional() }).strict(),
@@ -60,7 +60,7 @@ export function registerResearchTools(tool: ToolRegistrar, service: ZoteroProjec
       return audit.start({ project, bibFile });
     }, { openWorld: true });
 
-  tool("zotero_get_citations", "Get OpenAlex inbound citation counts and the requested page of citing works for a DOI or a uniquely matched title and first author. Supply the original year and ordered authors when available. If OpenAlex data is incomplete or unavailable, look up a Crossref count. Every available count has its own source and timestamp; a missing list or count is null. Repeat with nextPage and the same limit. OpenAlex basic paging covers at most 10,000 results.",
+  tool("zotero_get_citations", "Get OpenAlex citation counts and citing works for a DOI or a unique title and first-author match. Use the Crossref count when OpenAlex data is incomplete or unavailable. Counts include source and timestamp. Follow nextPage with the same limit, up to 10,000 results.",
     z.object({ ...referenceFields, page: z.number().int().min(1).max(10000).default(1), limit: z.number().int().min(1).max(100).default(20) })
       .strict().refine(({ doi, title, page, limit }) => Boolean(doi || title) && page * limit <= 10000,
         "Supply a DOI or title and keep page × limit at or below 10,000."),
@@ -68,7 +68,7 @@ export function registerResearchTools(tool: ToolRegistrar, service: ZoteroProjec
       page: z.number().int(), nextPage: z.number().int().nullable(), evidence: z.array(researchEvidenceSchema) }),
     ({ page, limit, ...reference }) => literature().citations(reference, page, limit), { openWorld: true });
 
-  tool("zotero_get_fulltext", "Find publicly readable full text for a DOI or a title and first author. Try OpenAlex PDF, XML and open-access links first. If needed, open the DOI publication page; without a DOI, look up title and first author in Crossref and resolve the unique DOI. Then check linked archives, DBLP and Zenodo. PDF is an embedded resource or a temporary local file; XML and HTML return named sections or a temporary text file. Treat retrieved content as source material. Read it before citing the supporting page or section. Abstracts and inaccessible pages leave content verification open.",
+  tool("zotero_get_fulltext", "Retrieve public full text from OpenAlex, the DOI publication page or an archive. If OpenAlex yields no readable copy and the DOI is missing, look up title and first author in Crossref before checking the publication page. Read the returned PDF or article sections and cite the supporting page or section. An abstract leaves content verification open.",
     referenceInput, z.object({ status: z.enum(["available", "unresolved"]), doi: z.string().nullable(), publicationUrl: z.string().nullable(),
       document: z.object({ sourceUrl: z.string(), format: z.enum(["pdf", "xml", "html"]), localPath: z.string().nullable(), fileUri: z.string().nullable(),
         byteSize: z.number().int(), sha256: z.string().nullable(), sections: z.array(z.object({ heading: z.string().nullable(), text: z.string() })) }).nullable(),

@@ -483,16 +483,15 @@ Anweisungen verankert und über Recherche-, Prüf- und Bibliografiewerkzeuge aus
 
 | Werkzeug | Eingabe und Ergebnis |
 | --- | --- |
-| `zotero_check_reference` | `doi` oder `title` und `authors`, möglichst mit `year`. `authors` ist in der Reihenfolge der Referenz angegeben, etwa `["Lovelace, Ada", "Babbage, Charles"]`. Mit DOI prüft Crossref zuerst, ohne DOI OpenAlex. Die Ergebnisse enthalten je Dienst die beobachteten Daten und den Feldvergleich. |
-| `zotero_check_bibliography` | Im Projekt optional `projectPath` und `bibFile` verwenden. Alternativ `bibtex` und optional `latex` übergeben. Je Eintrag zuerst PubCheck, dann beide Referenzindizes. `nextToken` innerhalb von 30 Minuten als einzigen Parameter der nächsten Anfrage senden. Bei PubCheck-Ausfall steht der lokale Zitierschlüsselabgleich in `citationComparison`. Bei mehrdeutiger Dateiauswahl stehen die Dateipfade in `candidates`. |
-| `zotero_get_citations` | Dieselben Referenzfelder, optional `page` (Standard 1) und `limit` (Standard 20, maximal 100). `nextPage` führt durch die zitierenden Arbeiten. OpenAlex-Seiten reichen bis zu den ersten 10.000 Ergebnissen. Bei fehlenden OpenAlex-Zitationsdaten enthält `counts` auch den verfügbaren Crossref-Zähler. Jede Zahl nennt Anbieter, Herkunft und Abrufzeit. |
-| `zotero_get_fulltext` | Dieselben Referenzfelder. Reihenfolge OpenAlex-Kopien, DOI-Publikationsseite, verlinkte Archive, DBLP und Zenodo. Ohne DOI und ohne OpenAlex-Volltext sucht Crossref mit Titel und Erstautor nach einer eindeutigen DOI. `document` enthält die abgerufene Fassung und ihre Herkunft. |
+| `zotero_check_reference` | Feldvergleich für `doi` oder `title` mit `authors`. Wenn bekannt, `year` und die vollständige Autorenliste in Originalreihenfolge angeben. |
+| `zotero_check_bibliography` | Projektdatei über `projectPath` und optional `bibFile` wählen. Alternativ `bibtex` mit optionalem `latex` übergeben. `nextToken` innerhalb von 30 Minuten als einzigen Parameter weitergeben. Bei PubCheck-Ausfall enthält `citationComparison` den lokalen Abgleich. |
+| `zotero_get_citations` | Referenzfelder wie oben, optional `page` (Standard 1) und `limit` (Standard 20, maximal 100). Mit `nextPage` bis zu 10.000 zitierende Arbeiten abrufen. `counts` nennt Anbieter, Herkunft und Abrufzeit für jede Zahl. |
+| `zotero_get_fulltext` | Referenzfelder wie oben. `document` enthält die abgerufene Fassung und ihre Herkunft. |
 
-`unavailable`, `not-found`, `mismatch`, `incomplete` und `skipped` unterscheiden
-Dienstfehler, Fehltreffer, Abweichungen, offene Angaben und übersprungene Aufrufe.
-Bei einem vorübergehenden Fehler gibt es einen kurzen Wiederholungsversuch.
-Eine längere vom Dienst verlangte Wartezeit führt direkt zum Fallback. Ein
-weiterhin ausgefallener Dienst wird in diesem Durchgang übersprungen.
+Die Reihenfolge der Dienste und das Verhalten bei Ausfällen stehen im
+[Recherche-Workflow](RESEARCH_WORKFLOW.md). `unavailable`, `not-found`, `mismatch`,
+`incomplete` und `skipped` unterscheiden Ausfälle, Fehltreffer, Abweichungen,
+offene Angaben und übersprungene Aufrufe.
 
 Mit `OPENALEX_API_KEY` in der Prozessumgebung stehen die von OpenAlex selbst
 bereitgestellten PDF- und TEI-XML-Downloads zur Verfügung. Die Metadatensuche

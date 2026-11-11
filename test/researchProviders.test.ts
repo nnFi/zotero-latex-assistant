@@ -98,7 +98,7 @@ test("OpenAlex outage without DOI searches Crossref by title and first author an
     pages.push(url.href);
     if (url.hostname === "doi.org") return { url: new URL("https://publisher.org/articles/analytical"),
       response: new Response('<meta name="citation_doi" content="10.1234/fulltext"><meta name="citation_pdf_url" content="../pdf/analytical">', { headers: { "Content-Type": "text/html" } }) };
-    return { url, response: new Response(pdf, { headers: { "Content-Type": "application/pdf" } }) };
+    return { url: new URL("https://cdn.publisher.org/analytical.pdf"), response: new Response(pdf, { headers: { "Content-Type": "application/pdf" } }) };
   };
   const found = await getFulltext(f.literature, { title, authors: [author], year: 1843 }, download);
   assert.deepEqual(f.calls.map((url) => url.hostname), ["api.openalex.org", "api.openalex.org", "api.crossref.org"]);
@@ -108,6 +108,7 @@ test("OpenAlex outage without DOI searches Crossref by title and first author an
   assert.equal(found.status, "available");
   assert.equal(found.doi, doi);
   assert.equal(found.publicationUrl, "https://publisher.org/articles/analytical");
+  assert.equal(found.document?.sourceUrl, "https://cdn.publisher.org/analytical.pdf");
   assert.equal(found.document?.format, "pdf");
   assert.equal(found.pdfBase64, pdf.toString("base64"));
   assert.equal(found.contentVerified, false);
@@ -161,7 +162,7 @@ test("publisher HTML returns article sections and keeps marked access restrictio
     const result = await getFulltext(f.literature, reference, async (url) => ({ url,
       response: new Response(`<meta name="citation_fulltext_world_readable" content="${!restricted}">
         <article><section class="abstract"><p>Abstract.</p></section>
-          <section itemprop="articleBody"><h2>Methods</h2><p>We simulated the engine.</p></section>
+          <section itemprop="articleBody"><h2>Methods</h2><p>We simulated the engine.<span hidden>Hidden text.</span></p></section>
         </article>`, { headers: { "Content-Type": "text/html" } }) }));
     if (restricted) {
       assert.equal(result.status, "unresolved");
@@ -216,7 +217,9 @@ test("bibliography keeps its inputs and provider outage across pages and compare
     assert.deepEqual(first.citationComparison?.missingFromBibliography, ["Missing"]);
     assert.deepEqual(first.citationComparison?.notCited, ["entry1", "entry2", "entry3", "entry4", "entry5"]);
     await writeFile(join(root, "refs.bib"), "");
-    const second = await audit.continue(first.nextToken!);
+    const next = audit.continue(first.nextToken!);
+    assert.equal(audit.continue(first.nextToken!), next);
+    const second = await next;
     assert.equal(second.results[0]?.citationKey, "entry5");
     assert.equal(second.results[0]?.pubcheck.evidence.status, "skipped");
     assert.equal(second.nextToken, null);
