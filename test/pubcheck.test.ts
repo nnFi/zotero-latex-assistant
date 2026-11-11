@@ -218,6 +218,16 @@ test("a PubCheck miss without DOI checks OpenAlex before Crossref, even with cit
   assert.deepEqual(result.referenceFallback?.results.map(({ provider, status }) => [provider, status]), [["openalex", "ok"], ["crossref", "ok"]]);
 });
 
+test("a PubCheck miss for every supplied ISBN also triggers a reference check", async () => {
+  const f = fixture();
+  f.control.verdict = "NOT_FOUND";
+  const result = await f.client.check({ ...book, item: { ...book.item, isbn: "9783030854355; 9783030854362" } }, false);
+  assert.equal(result.pubcheck.verdict, "UNVERIFIABLE");
+  assert.deepEqual(result.pubcheck.isbnChecks?.map(({ verdict }) => verdict), ["NOT_FOUND", "NOT_FOUND"]);
+  assert.equal(result.pubcheckEvidence.status, "not-found");
+  assert.deepEqual(result.referenceFallback?.results.map(({ provider }) => provider), ["openalex", "crossref"]);
+});
+
 test("a successful PubCheck retry resolves the request without a fallback", async () => {
   const f = fixture();
   f.control.pubcheckFailures = 1;
@@ -355,6 +365,16 @@ test("ISBN searches complete pagination before accepting uniqueness, and incompl
   f.control.isbnRecords = [bookRecord(), ...Array.from({ length: 500 }, () => ({ ...bookRecord(), title: ["Unrelated"] }))];
   const incomplete = await f.client.check(book);
   assert.equal(incomplete.citations.status, "unavailable"); assert.equal(incomplete.citations.count, null);
+});
+
+test("a missing later ISBN results page leaves the citation count unknown", async () => {
+  const f = fixture();
+  f.control.isbnRecords = [bookRecord(), ...Array.from({ length: 100 }, () => ({ ...bookRecord(), title: ["Unrelated"] }))];
+  const client = new PubcheckClient(async (input, init) => new URL(String(input)).searchParams.get("offset") === "100"
+    ? json({}, 404) : f.fetch(input, init));
+  const { citations } = await client.check(book);
+  assert.equal(citations.status, "unavailable");
+  assert.equal(citations.count, null);
 });
 
 test("ISBN schema errors, invalid matching DOIs, bad counts and provider errors cannot produce a citation number", async () => {

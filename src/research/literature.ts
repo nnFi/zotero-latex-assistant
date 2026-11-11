@@ -1,5 +1,6 @@
 import { normalizedDoi, normalizedText } from "../biblatex/duplicates";
 import { isRecord } from "../zotero/validation";
+import { normalizeDoi } from "./crossref";
 import { evidence, ProviderRun, requireRecord, ResearchFailure, safeUrl, type ResearchEvidence } from "./providerRun";
 
 export interface Reference {
@@ -12,6 +13,10 @@ export type Index = "openalex" | "crossref";
 export const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 export const countOf = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 export const doiUrl = (doi: string) => new URL(`https://doi.org/${encodeURIComponent(doi).replace(/%2F/i, "/")}`);
+
+function providerDoi(value: unknown): string | undefined {
+  try { return normalizeDoi(text(value)).toLowerCase(); } catch { return undefined; }
+}
 
 function records(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) throw new Error("Invalid provider result list.");
@@ -46,7 +51,7 @@ type CrossrefLookup = { value: { record: Record<string, unknown>; work: IndexedW
 function openAlexWork(data: Record<string, unknown>): IndexedWork {
   const id = /^https:\/\/openalex\.org\/(W\d+)\/?$/i.exec(text(data.id))?.[1]?.toUpperCase();
   if (!id) throw new Error("Missing OpenAlex work identifier.");
-  const doi = normalizedDoi(text(data.doi)) ?? null;
+  const doi = providerDoi(data.doi) ?? null;
   const title = text(data.title) || text(data.display_name);
   const content = isRecord(data.content_urls) ? data.content_urls : {};
   const has = isRecord(data.has_content) ? data.has_content : {};
@@ -69,7 +74,7 @@ function openAlexWork(data: Record<string, unknown>): IndexedWork {
 }
 
 function crossrefWork(data: Record<string, unknown>): IndexedWork {
-  const doi = normalizedDoi(text(data.DOI));
+  const doi = providerDoi(data.DOI);
   if (!doi) throw new Error("Missing Crossref DOI.");
   const title = Array.isArray(data.title) ? text(data.title[0]) : "";
   const subtitles = Array.isArray(data.subtitle) ? data.subtitle.map(text).filter(Boolean) : [];

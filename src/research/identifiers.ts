@@ -87,8 +87,10 @@ function openAlexMetadata(work: Work, record: Record<string, unknown>): Pick<Ide
     "conference-paper": "conferencePaper", report: "report", preprint: "preprint", dataset: "dataset", software: "computerProgram" };
   let itemType = mappings[work.type];
   if (work.type === "article") {
-    if (record.type_crossref === "journal-article") itemType = "journalArticle";
-    else if (record.type_crossref === "proceedings-article") itemType = "conferencePaper";
+    const originalType = text(record.raw_type) || text(record.type_crossref);
+    if (originalType === "journal-article") itemType = "journalArticle";
+    else if (originalType === "proceedings-article") itemType = "conferencePaper";
+    else if (originalType === "posted-content") itemType = "preprint";
     else if (source.type === "journal") itemType = "journalArticle";
     else if (source.type === "conference") itemType = "conferencePaper";
   }
@@ -107,7 +109,7 @@ function openAlexMetadata(work: Work, record: Record<string, unknown>): Pick<Ide
   if (itemType === "journalArticle" && source.type === "journal") container.publicationTitle = text(source.display_name);
   if (itemType === "conferencePaper" && source.type === "conference") container.proceedingsTitle = text(source.display_name);
   if (itemType === "bookSection" && isRecord(record.volume)) container.bookTitle = text(record.volume.display_name);
-  if (itemType === "preprint") container.repository = text(source.display_name);
+  if (itemType === "preprint" && source.type === "repository") container.repository = text(source.display_name);
   if (itemType === "thesis" || itemType === "report") publisherFields(itemType, "", "", "OpenAlex", warnings);
   const pages = [...new Set([text(biblio.first_page), text(biblio.last_page)].filter(Boolean))].join("-");
   const metadata = metadataSchema.parse({ itemType, title: work.title, creators, fields: {
@@ -131,7 +133,6 @@ export interface IdentifierLookupOptions {
   openAlexFallback?: boolean;
 }
 
-/** Only fixed public endpoints. No local credentials or project contents leave the machine. */
 export class IdentifierClient {
   constructor(private readonly fetch: typeof globalThis.fetch = globalThis.fetch) {}
 

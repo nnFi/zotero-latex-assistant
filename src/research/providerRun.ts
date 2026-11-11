@@ -104,7 +104,7 @@ export class ProviderRun {
     throw new Error("Invalid request retry state.");
   }
 
-  json<T>(provider: string, url: URL, parse: (body: unknown) => T, init: RequestInit = {}, deadline?: AbortSignal) {
+  json<T>(provider: string, url: URL, parse: (body: unknown) => T, init: RequestInit = {}) {
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
     headers.set("User-Agent", researchAgent);
@@ -130,6 +130,6 @@ export class ProviderRun {
         if (error instanceof ResearchFailure) throw error;
         throw new ResearchFailure("unavailable", "Provider returned an invalid response.");
       }
-    }, deadline ? { deadline } : undefined);
+    }, init.signal ? { deadline: init.signal } : undefined);
   }
 }

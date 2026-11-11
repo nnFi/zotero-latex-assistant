@@ -47,6 +47,7 @@ const noteSummary = z.object({ key, parentKey: key, version: z.number().int().no
 const note = noteSummary.extend({ library, itemKey: key, note: z.string() });
 const noteInput = { library, itemKey: key, content: z.string().min(1).max(100000), format: z.enum(["text", "html"]).default("text") };
 const writeInstruction = "Only call after an explicit user instruction to perform this action; obtain consent for actions you propose yourself. Zotero's local authorization dialog is still required. ";
+const sourceCheckDescription = "Use for requested external source checks. Only bibliographic citation metadata is sent. If PubCheck is unavailable or finds no match, referenceFallback compares title, authors and year in Crossref and OpenAlex. Retraction evidence comes from PubCheck. includeCitationCounts controls the separate Crossref DOI or ISBN count.";
 
 interface ToolOptions {
   readonly write?: boolean;
@@ -134,12 +135,12 @@ export function createServer(service: ZoteroProjectService): McpServer {
     z.object({ status: z.enum(["preview", "unchanged", "imported"]), citedKeys: z.array(z.string()), importedItemKeys: z.array(key), bibFile: z.string(),
       scannedFiles: z.array(z.string()), projectFilesChanged: z.boolean(), backup: z.string().nullable() }),
     async ({ projectPath, exporter, dryRun }) => (await service.forProject(projectPath)).syncBibliography(exporter, dryRun), { write: true });
-  tool("zotero_check_sources", "Check selected Zotero sources with PubCheck. Pass 1 to 10 unique itemKeys or page the selected collection with nextOffset. If PubCheck is unavailable or finds no match, referenceFallback compares title, authors and year with Crossref then OpenAlex for a DOI, or OpenAlex then Crossref without one. Review the original PubCheck verdict and retraction evidence. includeCitationCounts controls the separate Crossref DOI or ISBN count. Only citation metadata is sent to providers.",
+  tool("zotero_check_sources", `Check saved Zotero sources. Pass 1 to 10 unique itemKeys or page through the selected scope with nextOffset. ${sourceCheckDescription}`,
     z.object({ itemKeys: z.array(key).min(1).max(10).optional(), limit: z.number().int().min(1).max(10).default(5), offset: z.number().int().nonnegative().default(0), includeCitationCounts: z.boolean().default(true) }).strict(),
     z.object({ library, collectionKey: z.string(), total: z.number().int().nonnegative(), offset: z.number().int().nonnegative(), nextOffset: z.number().int().nonnegative().nullable(),
       contentVerified: z.literal(false), guidance: z.string(), results: z.array(z.object({ itemKey: key, title: z.string(), version: z.number().int().nonnegative(), ...checkEvidence })) }),
     ({ itemKeys, limit, offset, includeCitationCounts }) => service.checkSources(itemKeys, limit, offset, includeCitationCounts), { openWorld: true });
-  tool("zotero_check_candidate", "Check the original bibliographic metadata before import. Runs without Zotero or a project. If PubCheck is unavailable or finds no match, referenceFallback compares title, authors and year with Crossref then OpenAlex for a DOI, or OpenAlex then Crossref without one. Review the original PubCheck verdict and retraction evidence. includeCitationCounts controls the separate Crossref DOI or ISBN count. Only citation metadata is sent to providers.",
+  tool("zotero_check_candidate", `Check the original bibliographic metadata before import. Runs without Zotero or a project. ${sourceCheckDescription}`,
     z.object({ metadata: metadataSchema, includeCitationCounts: z.boolean().default(true) }).strict(),
     z.object({ metadata: metadataSchema, ...checkEvidence, contentVerified: z.literal(false), zoteroChanged: z.literal(false), projectFilesChanged: z.literal(false), guidance: z.string() }),
     ({ metadata, includeCitationCounts }) => service.checkCandidate(metadata, includeCitationCounts), { openWorld: true });

@@ -1,10 +1,14 @@
 # Changelog
 
-## Unveröffentlicht
+## 1.1.0 — 11. November 2026
 
 - **MCP-Recherche:** OpenAlex mit Crossref-Fallback. Neue Aufrufe prüfen
   Einzelreferenzen und Literaturverzeichnisse, liefern Zitationsdaten und
   rufen frei zugängliche Volltexte über OpenAlex, Publikationsseiten und Archive ab.
+- **Quellenprüfung:** Bei PubCheck-Ausfällen oder Fehltreffern vergleichen Crossref
+  und OpenAlex Titel, Autoren und Jahr. Die Rückzugsprüfung bleibt bei Ausfall offen.
+- **DOI-Auflösung:** Bei einem Fehltreffer oder Ausfall von Crossref folgen
+  DataCite und bei Bedarf OpenAlex. Die Vorschau nennt die Herkunft der Metadaten.
 
 ## 1.0.0 — 4. November 2026
 

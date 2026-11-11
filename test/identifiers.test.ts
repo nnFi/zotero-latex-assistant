@@ -201,12 +201,23 @@ test("OpenAlex covers a DOI after a long Crossref rate limit and a DataCite miss
 });
 
 test("a merged OpenAlex DOI or an ambiguous publication type cannot be used for import metadata", async () => {
-  for (const [returnedDoi, type, error] of [["10.1234/other", "book", /requested DOI/], [doi, "article", /unambiguous source type/]] as const) {
+  for (const [returnedDoi, type, error] of [
+    ["10.1234/other", "book", /requested DOI/], ["10.1234/{example}", "book", /requested DOI/], [doi, "article", /unambiguous source type/],
+  ] as const) {
     const client = new IdentifierClient(async (input) => new URL(String(input)).hostname === "api.openalex.org"
       ? json({ id: "https://openalex.org/W123", doi: returnedDoi, title: "Indexed work", type,
         primary_location: { source: { type: "repository", display_name: "External Repository" } } }) : json({}, 404));
     await assert.rejects(client.lookup(doi), error);
   }
+});
+
+test("OpenAlex uses the original proceedings type when the paper appears in a journal series", async () => {
+  const client = new IdentifierClient(async (input) => new URL(String(input)).hostname === "api.openalex.org"
+    ? json({ id: "https://openalex.org/W123", doi, title: "Proceedings paper", type: "article", raw_type: "proceedings-article",
+      primary_location: { source: { type: "journal", display_name: "Journal Series" } } }) : json({}, 404));
+  const { metadata } = await client.lookup(doi);
+  assert.equal(metadata.itemType, "conferencePaper");
+  assert.equal(metadata.fields.proceedingsTitle, undefined);
 });
 
 test("Open Library verifies the requested edition and preserves literal author names", async () => {
