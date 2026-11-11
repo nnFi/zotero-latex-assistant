@@ -1,9 +1,9 @@
-import { APP_VERSION } from "../shared/version";
 import { normalizeDoi } from "./crossref";
 import { normalizeIsbn } from "./isbn";
 import { isRecord } from "../zotero/validation";
 import { metadataSchema, type SourceMetadata } from "../zotero/metadata";
-import { ResearchFailure } from "./providerRun";
+import { Literature, type Work } from "./literature";
+import { ProviderRun, requireRecord, ResearchFailure, type ResearchEvidence } from "./providerRun";
 
 export function normalizeIdentifier(input: string): { kind: "doi" | "isbn"; value: string } {
   return /^(?:10\.|doi:|https?:\/\/(?:dx\.)?doi\.org\/)/i.test(input.trim())
@@ -80,71 +80,106 @@ function dataciteMetadata(data: Record<string, unknown>): Pick<IdentifierResult,
   return { metadata, warnings };
 }
 
+function openAlexMetadata(work: Work, record: Record<string, unknown>): Pick<IdentifierResult, "metadata" | "warnings"> {
+  const location = isRecord(record.primary_location) ? record.primary_location : {};
+  const source = isRecord(location.source) ? location.source : {};
+  const mappings: Record<string, string> = { book: "book", "book-chapter": "bookSection", dissertation: "thesis",
+    "conference-paper": "conferencePaper", report: "report", preprint: "preprint", dataset: "dataset", software: "computerProgram" };
+  let itemType = mappings[work.type];
+  if (work.type === "article") {
+    if (record.type_crossref === "journal-article") itemType = "journalArticle";
+    else if (record.type_crossref === "proceedings-article") itemType = "conferencePaper";
+    else if (source.type === "journal") itemType = "journalArticle";
+    else if (source.type === "conference") itemType = "conferencePaper";
+  }
+  if (!itemType || !work.title || !work.doi) throw new Error("OpenAlex metadata lacks an unambiguous source type, title or DOI. Review the source manually.");
+
+  const authorships = Array.isArray(record.authorships) ? record.authorships : [];
+  const names = work.authors.map((name, index) => {
+    const authorship: unknown = authorships[index];
+    return (isRecord(authorship) && text(authorship.raw_author_name)) || name;
+  });
+  const creators = names.filter(Boolean).map((name) => ({ creatorType: itemType === "computerProgram" ? "programmer" : "author", name }));
+  const warnings: string[] = ["Metadata comes from the OpenAlex index. Review it before using the source."];
+  const biblio = isRecord(record.biblio) ? record.biblio : {};
+  const date = text(record.publication_date);
+  const container: Record<string, string> = {};
+  if (itemType === "journalArticle" && source.type === "journal") container.publicationTitle = text(source.display_name);
+  if (itemType === "conferencePaper" && source.type === "conference") container.proceedingsTitle = text(source.display_name);
+  if (itemType === "bookSection" && isRecord(record.volume)) container.bookTitle = text(record.volume.display_name);
+  if (itemType === "preprint") container.repository = text(source.display_name);
+  if (itemType === "thesis" || itemType === "report") publisherFields(itemType, "", "", "OpenAlex", warnings);
+  const pages = [...new Set([text(biblio.first_page), text(biblio.last_page)].filter(Boolean))].join("-");
+  const metadata = metadataSchema.parse({ itemType, title: work.title, creators, fields: {
+    DOI: work.doi, url: doiUrl(work.doi), date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : String(work.years[0] ?? ""),
+    ...container, volume: text(biblio.volume), issue: text(biblio.issue), pages, language: text(record.language),
+  } });
+  return { metadata, warnings };
+}
+
+export const identifierProviders = ["crossref", "datacite", "openalex", "openlibrary"] as const;
 export interface IdentifierResult {
   identifier: { kind: "doi" | "isbn"; value: string };
-  provider: "crossref" | "datacite" | "openlibrary";
+  provider: typeof identifierProviders[number];
   sourceUrl: string;
   metadata: SourceMetadata;
   warnings: string[];
 }
+export interface IdentifierLookupOptions {
+  run?: ProviderRun;
+  evidence?: ResearchEvidence[];
+  openAlexFallback?: boolean;
+}
+
 /** Only fixed public endpoints. No local credentials or project contents leave the machine. */
 export class IdentifierClient {
   constructor(private readonly fetch: typeof globalThis.fetch = globalThis.fetch) {}
-  private async request(url: URL): Promise<Record<string, unknown> | null> {
-    let response: Response;
-    let payload: unknown;
-    try {
-      response = await this.fetch(url, { headers: { Accept: "application/json", "User-Agent": `ZoteroLaTeXAssistant/${APP_VERSION}` },
-        signal: AbortSignal.timeout(15000), redirect: "error" });
-      if (!response.ok) {
-        await response.body?.cancel();
-        if (response.status === 404) return null;
-        throw new Error(`Metadata provider returned HTTP ${response.status}.`);
-      }
-      // Bound metadata in memory even when Content-Length is absent or misleading.
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("Empty metadata response.");
-      const chunks: Uint8Array[] = []; let size = 0;
-      try {
-        for (;;) {
-          const next = await reader.read();
-          if (next.done) break;
-          size += next.value.length;
-          if (size > 2 * 1024 * 1024) throw new Error("Metadata response exceeds 2 MiB.");
-          chunks.push(next.value);
-        }
-      } finally { await reader.cancel(); }
-      payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    } catch (error) {
-      throw new Error(`Identifier lookup failed: ${error instanceof Error ? error.message : "provider unavailable"}`);
-    }
-    if (!isRecord(payload)) throw new Error("Invalid metadata response.");
-    return payload;
-  }
-  async lookup(input: string, request = (url: URL) => this.request(url)): Promise<IdentifierResult> {
+
+  async lookup(input: string, { run = new ProviderRun(this.fetch), evidence, openAlexFallback = true }: IdentifierLookupOptions = {}): Promise<IdentifierResult> {
     const identifier = normalizeIdentifier(input);
     if (identifier.kind === "doi") {
-      const url = new URL(`https://api.crossref.org/works/${encodeURIComponent(identifier.value)}`);
-      const result = await request(url);
-      let mapped: Pick<IdentifierResult, "metadata" | "warnings">; let provider: IdentifierResult["provider"]; let sourceUrl = url.href;
-      if (result) {
-        if (!isRecord(result.message)) throw new Error("Invalid Crossref metadata response.");
-        mapped = crossrefMetadata(result.message); provider = "crossref";
-      } else {
-        const fallback = new URL(`https://api.datacite.org/dois/${encodeURIComponent(identifier.value)}`);
-        const result = await request(fallback);
-        if (!result) throw new Error("DOI not found at Crossref or DataCite.");
-        if (!isRecord(result.data) || !isRecord(result.data.attributes)) throw new Error("Invalid DataCite metadata response.");
-        mapped = dataciteMetadata(result.data.attributes); provider = "datacite"; sourceUrl = fallback.href;
+      const key = encodeURIComponent(identifier.value);
+      const registries = [
+        { provider: "crossref", url: new URL(`https://api.crossref.org/works/${key}`),
+          decode: (body: unknown) => requireRecord(requireRecord(body).message), map: crossrefMetadata },
+        { provider: "datacite", url: new URL(`https://api.datacite.org/dois/${key}`),
+          decode: (body: unknown) => requireRecord(requireRecord(requireRecord(body).data).attributes), map: dataciteMetadata },
+      ] as const;
+      const failures: ResearchEvidence[] = [];
+      for (const { provider, url, decode, map } of registries) {
+        const result = await run.json(provider, url, decode);
+        evidence?.push(result.evidence);
+        if (!result.value) {
+          failures.push(result.evidence);
+          continue;
+        }
+        const mapped = map(result.value);
+        if (mapped.metadata.fields.DOI !== identifier.value) throw new ResearchFailure("mismatch", "The returned DOI does not match the requested identifier.");
+        const warnings = [...failures.filter(({ status }) => status !== "not-found").map(lookupFailure), ...mapped.warnings];
+        return { identifier, provider, sourceUrl: url.href, metadata: mapped.metadata, warnings };
       }
-      if (mapped.metadata.fields.DOI !== identifier.value) throw new ResearchFailure("mismatch", "The returned DOI does not match the requested identifier.");
-      return { identifier, provider, sourceUrl, ...mapped };
+      if (openAlexFallback) {
+        const result = await new Literature(run).openAlexDoi(identifier.value);
+        evidence?.push(result.evidence);
+        if (result.value) {
+          const { record, work } = result.value;
+          const mapped = openAlexMetadata(work, record);
+          return { identifier, provider: "openalex", sourceUrl: work.sourceUrl, metadata: mapped.metadata,
+            warnings: [...failures.map(lookupFailure), ...mapped.warnings] };
+        }
+        failures.push(result.evidence);
+      }
+      throw new Error(`Identifier lookup failed. ${failures.map(lookupFailure).join(" ")}`);
     }
     const url = new URL("https://openlibrary.org/api/books");
     const bibkey = `ISBN:${identifier.value}`;
     url.search = new URLSearchParams({ bibkeys: bibkey, format: "json", jscmd: "data" }).toString();
-    const result = await request(url);
-    const data = result?.[bibkey];
+    const lookup = await run.json("openlibrary", url, requireRecord);
+    evidence?.push(lookup.evidence);
+    if (lookup.evidence.status !== "ok" && lookup.evidence.status !== "not-found") {
+      throw new Error(`Identifier lookup failed. ${lookupFailure(lookup.evidence)}`);
+    }
+    const data = lookup.value?.[bibkey];
     if (!isRecord(data)) throw new Error("ISBN not found at Open Library.");
     const identifiers = isRecord(data.identifiers) ? data.identifiers : {};
     const returnedIsbns = [identifiers.isbn_13, identifiers.isbn_10].flatMap((v) => Array.isArray(v) ? v : []);
@@ -159,4 +194,8 @@ export class IdentifierClient {
         url: `https://openlibrary.org/isbn/${identifier.value}` } });
     return { identifier, provider: "openlibrary", sourceUrl: url.href, metadata, warnings: [] };
   }
+}
+
+function lookupFailure({ provider, status, reason }: ResearchEvidence) {
+  return `${provider} (${status}): ${reason}`;
 }

@@ -138,7 +138,7 @@ test("DataCite supports string/object publishers while institutional roles remai
   }
 });
 
-test("DataCite fallback is used only after Crossref 404, and checks the returned DOI", async () => {
+test("DataCite is tried after a Crossref miss and must return the same DOI", async () => {
   const calls: string[] = [];
   const client = new IdentifierClient(async (input) => {
     const url = new URL(String(input)); calls.push(url.origin);
@@ -154,10 +154,58 @@ test("DataCite fallback is used only after Crossref 404, and checks the returned
   const wrong = new IdentifierClient(async (input) => new URL(String(input)).hostname === "api.crossref.org" ? json({}, 404)
     : json({ data: { attributes: { doi: "10.1234/other", types: { resourceTypeGeneral: "Book" }, titles: [{ title: "Wrong" }] } } }));
   await assert.rejects(wrong.lookup(doi), /does not match/);
-  for (const status of [429, 500]) {
-    let count = 0;
-    await assert.rejects(new IdentifierClient(async () => { count++; return json({}, status); }).lookup(doi), new RegExp(String(status)));
-    assert.equal(count, 1);
+});
+
+test("DOI lookup retries a transient Crossref error and returns DataCite provenance after an outage", async () => {
+  const calls: string[] = [];
+  let remainingErrors = 2;
+  const client = new IdentifierClient(async (input) => {
+    const url = new URL(String(input));
+    calls.push(url.hostname);
+    if (url.hostname === "api.crossref.org") return remainingErrors-- > 0 ? json({}, 503) : json({ message: work });
+    return json({ data: { attributes: { doi, types: { resourceTypeGeneral: "Dataset" }, titles: [{ title: "DataCite work" }] } } });
+  });
+  const fallback = await client.lookup(doi);
+  assert.deepEqual(calls, ["api.crossref.org", "api.crossref.org", "api.datacite.org"]);
+  assert.equal(fallback.provider, "datacite");
+  assert.match(fallback.warnings[0] ?? "", /crossref.*503/i);
+  calls.length = 0;
+  remainingErrors = 1;
+  const recovered = await client.lookup(doi);
+  assert.deepEqual(calls, ["api.crossref.org", "api.crossref.org"]);
+  assert.equal(recovered.provider, "crossref");
+  assert.deepEqual(recovered.warnings, []);
+});
+
+test("OpenAlex covers a DOI after a long Crossref rate limit and a DataCite miss", async () => {
+  const calls: URL[] = [];
+  const client = new IdentifierClient(async (input) => {
+    const url = new URL(String(input));
+    calls.push(url);
+    if (url.hostname === "api.crossref.org") return new Response(null, { status: 429, headers: { "Retry-After": "60" } });
+    if (url.hostname === "api.datacite.org") return json({}, 404);
+    return json({ id: "https://openalex.org/W123", doi: `https://doi.org/${doi}`, title: "Indexed article", type: "article",
+      primary_location: { source: { type: "journal", display_name: "Example Journal" } }, publication_year: 2024,
+      authorships: [{ author: { display_name: "Anna Müller" } }] });
+  });
+  const fallback = await client.lookup(doi);
+  assert.deepEqual(calls.map(({ hostname }) => hostname), ["api.crossref.org", "api.datacite.org", "api.openalex.org"]);
+  assert.equal(calls.at(-1)?.pathname, `/works/doi:${doi}`);
+  assert.equal(fallback.provider, "openalex");
+  assert.equal(fallback.sourceUrl, "https://openalex.org/W123");
+  assert.equal(fallback.metadata.itemType, "journalArticle");
+  assert.equal(fallback.metadata.fields.DOI, doi);
+  assert.equal(fallback.metadata.fields.publicationTitle, "Example Journal");
+  assert.equal(fallback.metadata.fields.date, "2024");
+  assert.deepEqual(fallback.metadata.creators, [{ creatorType: "author", name: "Anna Müller" }]);
+});
+
+test("a merged OpenAlex DOI or an ambiguous publication type cannot be used for import metadata", async () => {
+  for (const [returnedDoi, type, error] of [["10.1234/other", "book", /requested DOI/], [doi, "article", /unambiguous source type/]] as const) {
+    const client = new IdentifierClient(async (input) => new URL(String(input)).hostname === "api.openalex.org"
+      ? json({ id: "https://openalex.org/W123", doi: returnedDoi, title: "Indexed work", type,
+        primary_location: { source: { type: "repository", display_name: "External Repository" } } }) : json({}, 404));
+    await assert.rejects(client.lookup(doi), error);
   }
 });
 

@@ -21,14 +21,14 @@ import { metadataPatch } from "./writer";
 import { readLocalPdf } from "./attachmentFiles";
 import { metadataCompleteness } from "./completeness";
 import { citationKeysForUpdate, sourceCitationKey, withCitationKey } from "./citationMetadata";
-import { IdentifierClient, normalizeIdentifier, type IdentifierResult } from "../research/identifiers";
+import { IdentifierClient, identifierProviders, normalizeIdentifier, type IdentifierLookupOptions, type IdentifierResult } from "../research/identifiers";
 import { bibEntries } from "../biblatex/importer";
 import { normalizeIsbn } from "../research/isbn";
 import { importLocalPdf } from "./pdfImport";
 import { createSourceNote, noteContent, sourceNote } from "./notes";
 import { syncCitedBibliography } from "../biblatex/scientificWorkflow";
 import { Literature, publicWork, type Work } from "../research/literature";
-import { ProviderRun, requireRecord, ResearchFailure, type ResearchEvidence } from "../research/providerRun";
+import { ProviderRun, ResearchFailure, type ResearchEvidence } from "../research/providerRun";
 import { bibliographyRecords } from "../biblatex/fields";
 import { assertCollectionDeletionAllowed, collectionSubtree, createProjectCollection } from "./collectionOperations";
 import { setProjectCollection } from "./projectCollection";
@@ -101,8 +101,8 @@ export class ZoteroProjectService {
     return { metadata: input, completeness: metadataCompleteness(input, Object.keys(template)) };
   }
 
-  private async resolveIdentifier(scope: Scope, identifier: string, request?: (url: URL) => Promise<Record<string, unknown> | null>): Promise<IdentifierResult & { completeness: ReturnType<typeof metadataCompleteness> }> {
-    const result = await new IdentifierClient(this.options.fetch ?? globalThis.fetch).lookup(identifier, request);
+  private async resolveIdentifier(scope: Scope, identifier: string, options?: IdentifierLookupOptions): Promise<IdentifierResult & { completeness: ReturnType<typeof metadataCompleteness> }> {
+    const result = await new IdentifierClient(this.options.fetch ?? globalThis.fetch).lookup(identifier, options);
     const template = await scope.client.itemTemplate(result.metadata.itemType);
     const roles = await scope.client.creatorTypes(result.metadata.itemType);
     const fields: Record<string, string> = {};
@@ -144,7 +144,7 @@ export class ZoteroProjectService {
           throw new Error("This import requestId was already used with different input. Reuse the original identifier and overrides.");
         }
         const parsed = cached.resolved;
-        if (!["crossref", "datacite", "openlibrary"].includes(String(parsed.provider)) || typeof parsed.sourceUrl !== "string"
+        if (!identifierProviders.some((provider) => provider === parsed.provider) || typeof parsed.sourceUrl !== "string"
           || !Array.isArray(parsed.warnings) || parsed.warnings.some((warning) => typeof warning !== "string")) throw new Error("Invalid import journal.");
         resolved = { identifier: identity, provider: parsed.provider as IdentifierResult["provider"], sourceUrl: parsed.sourceUrl,
           metadata: metadataSchema.parse(parsed.metadata), warnings: parsed.warnings as string[] };
@@ -343,17 +343,10 @@ export class ZoteroProjectService {
           identifiers = fallback.value?.map((work) => work.id) ?? [];
         }
       }
-      const request = async (url: URL) => {
-        const provider = url.hostname === "api.crossref.org" ? "crossref" : url.hostname === "api.datacite.org" ? "datacite" : "openlibrary";
-        const lookup = await run.json(provider, url, requireRecord);
-        evidence.push(lookup.evidence);
-        if (lookup.evidence.status !== "ok" && lookup.evidence.status !== "not-found") throw new Error(lookup.evidence.reason);
-        return lookup.value;
-      };
       for (const value of identifiers) {
         const start = evidence.length;
         try {
-          candidates.push(await this.resolveIdentifier(scope, value, request));
+          candidates.push(await this.resolveIdentifier(scope, value, { run, evidence, openAlexFallback: false }));
         }
         catch (error) {
           const message = error instanceof Error ? error.message : "Identifier verification failed.";

@@ -35,7 +35,7 @@ das offizielle TypeScript-SDK 2.3.1. Die Zotero-Geschäftslogik liegt in
 | `zotero_get_metadata` | Eindeutige Quelle, Version, Sammlungen und Zitationswarnungen lesen |
 | `zotero_get_item_schema` | Zulässige Felder, Erstellerrollen und Empfehlungen je Quellentyp aus der lokalen Zotero-Version lesen |
 | `zotero_validate_metadata` | Feldstruktur prüfen und fehlende empfohlene Angaben melden; nur Typ und Titel sind Pflicht |
-| `zotero_lookup_identifier` | DOI über Crossref/DataCite oder ISBN über Open Library als Metadatenvorschau auflösen |
+| `zotero_lookup_identifier` | DOI über Crossref, DataCite und OpenAlex als Metadatenvorschau auflösen. ISBN-Abfragen nutzen Open Library. |
 | `zotero_import_identifier` | DOI-/ISBN-Quelle mit festem Zitierschlüssel und Herkunftsnachweis in die ausgewählte Sammlung aufnehmen |
 | `zotero_check_duplicates` | Normalisierte DOI und bibliografische Übereinstimmungen prüfen |
 | `zotero_create_item` | Validierte Quelle mit festem Zitierschlüssel, automatischer Sammlung und stabiler Anfrage-ID anlegen |

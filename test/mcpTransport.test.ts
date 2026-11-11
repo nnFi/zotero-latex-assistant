@@ -24,6 +24,7 @@ globalThis.fetch=async(input,init)=>{
  const json=(v,status=200)=>new Response(JSON.stringify(v),{status,headers:h});
  if(u.hostname==="api.openalex.org") {
    if(u.searchParams.has("filter")) return json({meta:{count:0},results:[]});
+   if(p.endsWith("stdio-indexed")) return json({id:"https://openalex.org/W789",doi:"https://doi.org/10.1234/stdio-indexed",title:"Indexed protocol book",type:"book"});
    return json({id:"https://openalex.org/W123",doi:"https://doi.org/10.1234/stdio",title:"Imported protocol book",publication_year:2026,
      authorships:[{author:{display_name:"Tester"}}],cited_by_count:0});
  }
@@ -37,6 +38,7 @@ globalThis.fetch=async(input,init)=>{
      compared_fields:["title","authors","year","doi","isbn","journal"],reasons:["provider evidence"],resolved:{title,doi,isbn,source:"crossref"}}});
  }
  if(u.hostname==="api.crossref.org"){
+   if(p.endsWith("stdio-indexed")) return new Response(null,{status:429,headers:{"Retry-After":"60"}});
    if(p.endsWith("isbn-format")) return json({message:{DOI:"10.1234/isbn-format",ISBN:["9783030854355","9783030854362"],"is-referenced-by-count":41}});
    if(u.searchParams.has("filter")) return json({message:{"total-results":1,items:[{DOI:"10.1234/isbn-book",type:"book",ISBN:["9780306406157"],title:[saved?.title||"External ISBN publication"],"is-referenced-by-count":17}]}});
    if(p.endsWith("stdio-thesis")) return json({message:{DOI:"10.1234/stdio-thesis",type:"dissertation",title:["Protocol thesis"],publisher:"Commercial Publisher",institution:[{name:"Actual University"}]}});
@@ -44,6 +46,7 @@ globalThis.fetch=async(input,init)=>{
    if(p.endsWith("stdio-datacite")) return json({},404);
    return json({message:{DOI:"10.1234/stdio",type:"book",title:["Imported protocol book"],author:[{family:"Tester"}],publisher:"Fixture",issued:{"date-parts":[[2026]]}}});
  }
+ if(u.hostname==="api.datacite.org" && p.endsWith("stdio-indexed")) return json({},404);
  if(u.hostname==="api.datacite.org") return json({data:{attributes:{doi:"10.1234/stdio-datacite",types:{resourceTypeGeneral:"Dissertation"},titles:[{title:"Protocol DataCite thesis"}],publisher:{name:"External Repository"},contributors:[{name:"Hosting University",contributorType:"HostingInstitution"}]}}});
  if(u.hostname==="openlibrary.org") return json({"ISBN:9780306406157":{title:"ISBN protocol book",identifiers:{isbn_13:["9780306406157"]}}});
  const item=()=>({key:saved.key,version:saved.version,data:saved});
@@ -194,6 +197,9 @@ test("official MCP client exercises local tools and identifier tools over real b
   assert.equal(datacite.provider, "datacite");
   assert.equal((datacite.metadata as { fields: { university?: string } }).fields.university, undefined);
   assert((datacite.warnings as string[]).some((message) => message.includes("degree-granting university")));
+  const indexed = await call("zotero_lookup_identifier", { identifier: "10.1234/stdio-indexed" });
+  assert.equal(indexed.provider, "openalex");
+  assert.equal(indexed.sourceUrl, "https://openalex.org/W789");
   await call("zotero_check_duplicates", { metadata });
   const rejectedSource = await client.callTool({ name: "zotero_create_item", arguments: { metadata, requestId: "stdio-request-1" } });
   assert.equal(rejectedSource.isError, true);

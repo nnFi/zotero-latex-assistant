@@ -788,8 +788,11 @@ Der spätere Projektimport bewahrt diesen Schlüssel auch beim nativen Export;
 bereits bestehende Projektzuordnungen werden nicht umbenannt.
 
 `zotero_lookup_identifier` liefert eine Vorschau ohne Zotero-Schreibzugriff.
-DOIs werden über Crossref aufgelöst; nur nach einem Crossref-404 wird DataCite
-versucht. ISBN-10 und ISBN-13 werden inklusive Prüfziffer validiert und auf eine
+Für DOIs fragt der MCP zuerst Crossref ab. Bei Fehltreffer oder Ausfall folgt
+DataCite, danach bei Bedarf OpenAlex. Ein OpenAlex-Treffer muss dieselbe DOI
+und einen eindeutig zuordenbaren Quellentyp liefern. Anbieter, Herkunft und
+Hinweise stehen in der Vorschau und im Importergebnis. ISBN-10 und ISBN-13
+werden inklusive Prüfziffer validiert und auf eine
 gemeinsame ISBN-13-Identität normalisiert. Buchmetadaten kommen aus Open Library.
 Es wird ausschließlich der Identifier an feste öffentliche HTTPS-Endpunkte
 gesendet. Die beiden Identifier-Werkzeuge haben `openWorldHint: true`.
@@ -831,10 +834,10 @@ Grundlage: [Crossref – Institutionsangaben nach Quellentyp](https://www.crossr
 [DataCite – Publisher](https://datacite-metadata-schema.readthedocs.io/en/4.7/properties/publisher/)
 und [DataCite – Beitragsrollen](https://datacite-metadata-schema.readthedocs.io/en/4.7/appendices/appendix-1/contributorType/).
 
-Anbieter und Rückgaben müssen bibliografisch geprüft werden. Die Anbieter decken
-nicht alle Identifier ab; HTTP-Fehler, Rate-Limits, falsche Identifier, übergroße
-Antworten und unbekannte Typen liefern Fehler. Netzwerkaufrufe haben 15 Sekunden
-Timeout und ein Antwortlimit von 2 MiB. Weiterleitungen werden nicht verfolgt.
+Vorübergehende Dienstfehler werden einmal kurz wiederholt. Bei längerer
+Wartevorgabe greift der Fallback sofort. Pro Anfrage gelten fünf Sekunden
+Zeitlimit und 2 MiB Antwortlimit. OpenAlex-Weiterleitungen bleiben auf derselben
+API-Domain. Eine abweichende DOI oder ein unbekannter Typ erfordert eine Prüfung.
 
 Unter `.zotero/mcp/imports/` werden die aufgelösten Metadaten, Eingabedigest und
 Herkunft für eine Import-Anfrage eingefroren. Wiederholungen mit gleicher `requestId`,
@@ -850,6 +853,7 @@ Quellen. Titel-/Autor-/Jahr-Übereinstimmungen bleiben überprüfbare mögliche 
 
 Anbieterdokumentation: [Crossref REST API](https://github.com/Crossref/rest-api-doc),
 [DataCite DOI-Abfrage](https://support.datacite.org/docs/api-get-doi),
+[OpenAlex DOI-Abfrage](https://help.openalex.org/api/get-single-entities/),
 [Open Library Books API](https://openlibrary.org/dev/docs/api/books).
 
 ## Schreiben, Wiederholen und Papierkorb

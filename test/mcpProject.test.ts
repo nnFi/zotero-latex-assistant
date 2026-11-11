@@ -194,6 +194,35 @@ test("ISBN import works with missing author/date/publisher; equivalent editions 
   await assert.rejects(service.importIdentifier("9780306406157", "isbn-request-3", { fields: { ISBN: "9780140328721" } }), /preserve/);
 });
 
+test("DOI imports retain OpenAlex fallback provenance across a restart after an uncertain write", async (t) => {
+  const f = await fixture(t);
+  const calls: string[] = [];
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const { hostname } = new URL(String(input));
+    if (hostname === "localhost") return f.fetch(input, init);
+    calls.push(hostname);
+    if (hostname === "api.crossref.org") return new Response(null, { status: 429, headers: { "Retry-After": "60" } });
+    if (hostname === "api.datacite.org") return new Response(null, { status: 404 });
+    assert.equal(hostname, "api.openalex.org");
+    return Response.json({ id: "https://openalex.org/W789", doi: "https://doi.org/10.1234/fallback", type: "book", title: "Indexed book" });
+  };
+  const service = new ZoteroProjectService(f.root, { fetch });
+  const preview = await service.lookupIdentifier("10.1234/fallback");
+  assert.equal(preview.provider, "openalex");
+  assert.equal(f.counts().writes, 0);
+  calls.length = 0;
+  f.control.droppedResponse = true;
+  await assert.rejects(service.importIdentifier("10.1234/fallback", "openalex-import-request"));
+  assert.equal(f.counts().writes, 1);
+  f.control.droppedResponse = false;
+  const restarted = new ZoteroProjectService(f.root, { fetch: (input, init) => fetch(input, init) });
+  const imported = await restarted.importIdentifier("10.1234/fallback", "openalex-import-request") as { status: string; provenance: { provider: string } };
+  assert.deepEqual(calls, ["api.crossref.org", "api.datacite.org", "api.openalex.org"]);
+  assert.equal(imported.status, "already-created");
+  assert.equal(imported.provenance.provider, "openalex");
+  assert.equal(f.counts().writes, 1);
+});
+
 test("institutional DOI metadata and mapping guidance survive schema filtering, writes and frozen retries", async (t) => {
   for (const provider of ["crossref", "datacite"]) {
     for (const itemType of ["thesis", "report"]) {

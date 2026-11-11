@@ -9,6 +9,7 @@ import { metadataSchema, metadataUpdateSchema } from "../src/zotero/metadata";
 import { ZoteroError } from "../src/shared/errors";
 import { isRecord } from "../src/zotero/validation";
 import { pubcheckVerdicts } from "../src/research/pubcheck";
+import { identifierProviders } from "../src/research/identifiers";
 import { registerTikzTool } from "./tikz";
 import { referenceCheckSchema, registerResearchTools, researchEvidenceSchema, researchWorkSchema } from "./research";
 
@@ -23,7 +24,7 @@ const match = z.object({ item, reason: z.enum(["doi", "isbn", "title-author-year
 const completeness = z.object({ complete: z.boolean(), profile: z.string(), required: z.array(z.string()), recommended: z.array(z.string()),
   creatorRoles: z.array(z.string()), missingRequired: z.array(z.string()), missingRecommended: z.array(z.string()) });
 const provenance = z.object({ identifier: z.object({ kind: z.enum(["doi", "isbn"]), value: z.string() }),
-  provider: z.enum(["crossref", "datacite", "openlibrary"]), sourceUrl: z.string() });
+  provider: z.enum(identifierProviders), sourceUrl: z.string() });
 const createResult = z.union([detail.extend({ status: z.enum(["created", "already-created"]), requestId: z.string(), citationKey: z.string(), completeness,
   verified: z.literal(true), provenance: provenance.optional(), lookupWarnings: z.array(z.string()).optional() }),
 z.object({ status: z.literal("duplicate-blocked"), library, matches: z.array(match), created: z.literal(false),
@@ -173,7 +174,7 @@ export function createServer(service: ZoteroProjectService): McpServer {
     ({ itemType }) => service.itemSchema(itemType));
   tool("zotero_validate_metadata", "Validate provided fields and creator roles against the connected Zotero schema and report missing recommended information. Only itemType and title are required. Does not require all fields or enrich metadata; missing recommendations never block creation.",
     z.object({ metadata: metadataSchema }).strict(), z.object({ metadata: metadataSchema, completeness }), ({ metadata }) => service.checkMetadata(metadata));
-  tool("zotero_lookup_identifier", "Look up a DOI (including doi.org URL) at Crossref, with DataCite fallback for unregistered Crossref identifiers, or a checksum-validated ISBN-10/13 at Open Library. Sends only the identifier to public providers. Returns type-specific Zotero metadata, provenance and missing-field guidance. Does not create anything. Review provider facts; no fabricated values, full text or PDFs.",
+  tool("zotero_lookup_identifier", "Preview Zotero metadata for a DOI or checksum-validated ISBN. For DOI lookups, try Crossref, then DataCite and OpenAlex on a miss or outage. OpenAlex results require an exact DOI and a supported source type. ISBN lookups use Open Library. The result includes the provider and source URL.",
     z.object({ identifier: z.string().trim().min(1).max(500) }).strict(), provenance.extend({ metadata: metadataSchema, warnings: z.array(z.string()), completeness }),
     ({ identifier }) => service.lookupIdentifier(identifier), { openWorld: true });
   tool("zotero_import_identifier", writeInstruction + "Add a source by DOI or ISBN to the selected collection. Resolve verified identifier metadata, validate type-specific fields, store a fixed citation key and check library-wide DOI/ISBN duplicates. Optional overrides enrich or correct metadata but cannot change the identifier or book edition. Missing recommended fields never block writing. Reuse the same requestId, identifier, overrides and citationKey after uncertainty; metadata is frozen for retries. No PDF download or project .bib import. Public lookup sends only the identifier; returns provenance and guidance.",

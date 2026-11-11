@@ -39650,14 +39650,273 @@ var ProviderRun = class {
   }
 };
 
+// src/research/literature.ts
+var text = (value2) => typeof value2 === "string" ? value2.trim() : "";
+var countOf = (value2) => typeof value2 === "number" && Number.isSafeInteger(value2) && value2 >= 0 ? value2 : null;
+var doiUrl = (doi) => new URL(`https://doi.org/${encodeURIComponent(doi).replace(/%2F/i, "/")}`);
+function records(value2) {
+  if (!Array.isArray(value2)) throw new Error("Invalid provider result list.");
+  return value2.map(requireRecord);
+}
+function yearOf(value2) {
+  return typeof value2 === "number" && Number.isInteger(value2) && value2 >= 1e3 && value2 <= 9999 ? value2 : void 0;
+}
+function yearsFrom(value2) {
+  const parts = isRecord(value2) && Array.isArray(value2["date-parts"]) ? value2["date-parts"] : [];
+  return parts.flatMap((part) => Array.isArray(part) ? yearOf(part[0]) ?? [] : []);
+}
+function openAlexWork(data) {
+  const id = /^https:\/\/openalex\.org\/(W\d+)\/?$/i.exec(text(data.id))?.[1]?.toUpperCase();
+  if (!id) throw new Error("Missing OpenAlex work identifier.");
+  const doi = normalizedDoi(text(data.doi)) ?? null;
+  const title = text(data.title) || text(data.display_name);
+  const content2 = isRecord(data.content_urls) ? data.content_urls : {};
+  const has = isRecord(data.has_content) ? data.has_content : {};
+  const contentUrls = ["grobid_xml", "pdf"].flatMap((format) => {
+    const suffix = format === "pdf" ? "pdf" : "grobid-xml";
+    const url2 = `https://content.openalex.org/works/${id}.${suffix}`;
+    return content2[format] === url2 || has[format] === true ? [url2] : [];
+  });
+  const locations = [data.best_oa_location, ...Array.isArray(data.locations) ? data.locations : []].filter(isRecord).filter((location) => location.is_oa === true).flatMap((location) => [location.pdf_url, location.landing_page_url].flatMap((url2) => safeUrl(url2) ?? []));
+  const oa = isRecord(data.open_access) && data.open_access.is_oa === true ? safeUrl(data.open_access.oa_url) : null;
+  if (oa) locations.push(oa);
+  const year = yearOf(data.publication_year);
+  return {
+    provider: "openalex",
+    id,
+    doi,
+    title,
+    titles: [title],
+    type: text(data.type),
+    sourceUrl: `https://openalex.org/${id}`,
+    authors: Array.isArray(data.authorships) ? data.authorships.map((entry) => {
+      if (!isRecord(entry)) return "";
+      return (isRecord(entry.author) ? text(entry.author.display_name) : "") || text(entry.raw_author_name);
+    }) : [],
+    years: year === void 0 ? [] : [year],
+    count: countOf(data.cited_by_count),
+    contentUrls,
+    locations: [...new Set(locations)]
+  };
+}
+function crossrefWork(data) {
+  const doi = normalizedDoi(text(data.DOI));
+  if (!doi) throw new Error("Missing Crossref DOI.");
+  const title = Array.isArray(data.title) ? text(data.title[0]) : "";
+  const subtitles = Array.isArray(data.subtitle) ? data.subtitle.map(text).filter(Boolean) : [];
+  return {
+    provider: "crossref",
+    id: doi,
+    doi,
+    title,
+    titles: [title, ...subtitles.map((subtitle) => `${title}: ${subtitle}`)],
+    sourceUrl: `https://api.crossref.org/works/${encodeURIComponent(doi)}`,
+    type: text(data.type),
+    authors: Array.isArray(data.author) ? data.author.map((entry) => {
+      if (!isRecord(entry)) return "";
+      return [text(entry.family), text(entry.given)].filter(Boolean).join(", ") || text(entry.name);
+    }) : [],
+    years: [...new Set(["published-print", "published-online", "published", "issued"].flatMap((field) => yearsFrom(data[field])))],
+    count: countOf(data["is-referenced-by-count"]),
+    contentUrls: [],
+    locations: []
+  };
+}
+function publicWork({ provider, id, sourceUrl, doi, title, authors, years, type, count: count2 }) {
+  return { provider, id, sourceUrl, doi, title, authors, years, type, count: count2 };
+}
+function validDoi(reference2) {
+  if (!reference2.doi?.trim()) return void 0;
+  const doi = normalizedDoi(reference2.doi);
+  if (!doi) throw new Error("Enter a valid DOI.");
+  return doi;
+}
+function nameParts(value2) {
+  const comma = value2.indexOf(",");
+  const words = normalizedText(value2).split(" ");
+  return comma >= 0 ? { family: normalizedText(value2.slice(0, comma)), given: normalizedText(value2.slice(comma + 1)).split(" ").filter(Boolean) } : { family: words.at(-1) ?? "", given: words.slice(0, -1) };
+}
+function compareAuthor(expected, found) {
+  const a = nameParts(expected), b = nameParts(found);
+  if (!a.family || !b.family) return "unknown";
+  if (normalizedText(expected) === normalizedText(found)) return "match";
+  if (a.family !== b.family) {
+    const display = (name2) => [...name2.given, name2.family].join(" ");
+    return display(a) === display(b) ? "match" : "mismatch";
+  }
+  return a.given.slice(0, b.given.length).some((part, index) => {
+    const other = b.given[index];
+    return part !== other && (part[0] !== other[0] || part.length > 1 && other.length > 1);
+  }) ? "mismatch" : "match";
+}
+function compareTitle(title, work) {
+  const normalized2 = normalizedText(title ?? "");
+  const titles = work.titles.map(normalizedText).filter(Boolean);
+  if (!normalized2 || !titles.length) return "unknown";
+  return titles.includes(normalized2) ? "match" : "mismatch";
+}
+function compareAuthors(authors, work) {
+  if (!authors?.length || !work.authors.length) return "unknown";
+  const abbreviated = /^(?:others|et al\.?)$/i.test(authors.at(-1));
+  const expected = abbreviated ? authors.slice(0, -1) : authors;
+  if (!abbreviated && expected.length !== work.authors.length || expected.length > work.authors.length) return "mismatch";
+  const comparisons = expected.map((name2, index) => compareAuthor(name2, work.authors[index]));
+  if (comparisons.includes("mismatch")) return "mismatch";
+  return abbreviated || comparisons.includes("unknown") ? "unknown" : "match";
+}
+function compareYear(year, work) {
+  return year === void 0 || !work.years.length ? "unknown" : work.years.includes(year) ? "match" : "mismatch";
+}
+function matchesReference(reference2, work) {
+  const authors = reference2.authors?.length === 1 ? compareAuthor(reference2.authors[0], work.authors[0] ?? "") : compareAuthors(reference2.authors, work);
+  return compareTitle(reference2.title, work) !== "mismatch" && authors !== "mismatch" && compareYear(reference2.year, work) !== "mismatch";
+}
+var Literature = class {
+  constructor(run, options2 = {}) {
+    this.run = run;
+    this.options = options2;
+  }
+  run;
+  options;
+  lastCrossrefDoi;
+  crossrefDoi(doi) {
+    if (this.lastCrossrefDoi?.doi === doi) return this.lastCrossrefDoi.lookup;
+    const url2 = new URL(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
+    const lookup2 = this.run.json("crossref", url2, (body) => {
+      const record2 = requireRecord(requireRecord(body).message);
+      const work = crossrefWork(record2);
+      if (work.doi !== doi) throw new ResearchFailure("mismatch", "Crossref returned a different DOI.");
+      return { record: record2, work };
+    });
+    if (this.options.reuseCrossrefDoi) this.lastCrossrefDoi = { doi, lookup: lookup2 };
+    return lookup2;
+  }
+  openAlexDoi(doi) {
+    const url2 = new URL(`https://api.openalex.org/works/doi:${encodeURIComponent(doi).replace(/%2F/i, "/")}`);
+    return this.run.json("openalex", url2, (body) => {
+      const record2 = requireRecord(body);
+      const work = openAlexWork(record2);
+      if (work.doi !== doi) throw new ResearchFailure(work.doi ? "mismatch" : "incomplete", "The provider did not return the requested DOI.");
+      return { record: record2, work };
+    });
+  }
+  async lookup(provider, doi) {
+    const { value: value2, evidence: source } = await (provider === "crossref" ? this.crossrefDoi(doi) : this.openAlexDoi(doi));
+    return { value: value2?.work ?? null, evidence: source };
+  }
+  search(provider, query, limit, firstAuthor) {
+    const url2 = new URL(provider === "openalex" ? "https://api.openalex.org/works" : "https://api.crossref.org/works");
+    if (provider === "openalex") {
+      url2.searchParams.set("search", query);
+      url2.searchParams.set("per_page", String(limit));
+    } else {
+      url2.searchParams.set("query.bibliographic", query);
+      if (firstAuthor) url2.searchParams.set("query.author", firstAuthor);
+      url2.searchParams.set("rows", String(limit));
+    }
+    return this.run.json(provider, url2, (body) => {
+      const record2 = requireRecord(body);
+      const works = provider === "openalex" ? records(record2.results).map(openAlexWork) : records(requireRecord(record2.message).items).map(crossrefWork);
+      if (!works.length) throw new ResearchFailure("not-found", "Search returned no works.");
+      const titled = works.filter((work) => normalizedText(work.title));
+      if (!titled.length) throw new ResearchFailure("incomplete", "Search results have no usable titles.");
+      return [...new Map(titled.map((work) => [work.doi ?? work.id, work])).values()].slice(0, limit);
+    });
+  }
+  async identify(provider, reference2) {
+    const doi = validDoi(reference2);
+    if (doi) return this.lookup(provider, doi);
+    const firstAuthor = reference2.authors?.[0];
+    if (!reference2.title || !firstAuthor || !normalizedText(reference2.title) || !normalizedText(firstAuthor)) {
+      return { value: null, evidence: evidence(provider, "", "incomplete", "Supply a DOI or both title and first author.") };
+    }
+    const result = await this.search(provider, reference2.title, 25, firstAuthor);
+    if (!result.value) return { ...result, value: null };
+    const plausible = result.value.filter((work) => compareTitle(reference2.title, work) === "match" && compareAuthor(firstAuthor, work.authors[0] ?? "") !== "mismatch");
+    const compatible = plausible.filter((work) => matchesReference(reference2, work));
+    const candidates = compatible.length ? compatible : plausible;
+    const first2 = candidates[0];
+    const report = (status, reason) => ({ value: null, evidence: { ...result.evidence, status, reason } });
+    if (candidates.length > 1) return report("ambiguous", "Multiple works match the title and author evidence.");
+    if (!first2) return report("not-found", "No result matches the title and first author.");
+    if (compareAuthor(firstAuthor, first2.authors[0] ?? "") !== "match") return report("incomplete", "First author is missing from the potential match.");
+    return { evidence: { ...result.evidence, sourceUrl: first2.sourceUrl }, value: first2 };
+  }
+  async check(reference2) {
+    const doi = validDoi(reference2);
+    const providers = doi ? ["crossref", "openalex"] : ["openalex", "crossref"];
+    const results = [];
+    for (const provider of providers) {
+      const lookup2 = await this.identify(provider, reference2);
+      const work = lookup2.value;
+      const fields = {
+        doi: doi && work?.doi === doi ? "match" : doi && lookup2.evidence.status === "mismatch" ? "mismatch" : "unknown",
+        title: work ? compareTitle(reference2.title, work) : "unknown",
+        authors: work ? compareAuthors(reference2.authors, work) : "unknown",
+        year: work ? compareYear(reference2.year, work) : "unknown"
+      };
+      const mismatch = Object.values(fields).includes("mismatch");
+      const complete = [fields.title, fields.authors, fields.year].every((field) => field === "match");
+      const report = work ? {
+        ...lookup2.evidence,
+        status: mismatch ? "mismatch" : complete ? "ok" : "incomplete",
+        reason: mismatch ? "Bibliographic fields differ." : complete ? "Title, authors and year match." : "Some bibliographic fields could not be compared."
+      } : lookup2.evidence;
+      results.push({ ...report, fields, work: work ? publicWork(work) : null });
+    }
+    const dois = new Set(results.flatMap((result) => result.work?.doi ?? []));
+    return { results, doiConflict: dois.size > 1, contentVerified: false };
+  }
+  async find(provider, reference2) {
+    const lookup2 = await this.identify(provider, reference2);
+    if (lookup2.value && !matchesReference(reference2, lookup2.value)) {
+      return { value: null, evidence: { ...lookup2.evidence, status: "mismatch", reason: "Reference metadata does not match the work." } };
+    }
+    return lookup2;
+  }
+  async citations(reference2, page, limit) {
+    const { value: work, evidence: source } = await this.find("openalex", reference2);
+    const events = [source];
+    const counts = [];
+    let citing = null, nextPage = null, citingSource = null;
+    if (work) {
+      if (work.count !== null) counts.push({ value: work.count, provider: work.provider, sourceUrl: work.sourceUrl, checkedAt: source.checkedAt });
+      else events.push(evidence("openalex", work.sourceUrl, "incomplete", "Citation count is missing."));
+      const url2 = new URL("https://api.openalex.org/works");
+      url2.search = new URLSearchParams({ filter: `cites:${work.id}`, page: String(page), per_page: String(limit), sort: "publication_date:desc" }).toString();
+      const list = await this.run.json("openalex", url2, (body) => {
+        const record2 = requireRecord(body);
+        const results = records(record2.results).map(openAlexWork);
+        const total = countOf(requireRecord(record2.meta).count);
+        if (total === null || total > (page - 1) * limit && !results.length) {
+          throw new ResearchFailure("incomplete", "Citing-works response is incomplete.");
+        }
+        return { results, total };
+      });
+      events.push(list.evidence);
+      citingSource = list.evidence;
+      if (list.value) {
+        citing = list.value.results.map(publicWork);
+        if (list.value.total > page * limit && (page + 1) * limit <= 1e4) nextPage = page + 1;
+      }
+    }
+    if (!counts.length || citing === null) {
+      const { value: matched, evidence: fallback } = await this.find("crossref", { ...reference2, doi: reference2.doi || work?.doi || void 0 });
+      events.push(matched?.count === null ? { ...fallback, status: "incomplete", reason: "Crossref citation count is missing." } : fallback);
+      if (matched?.count != null) counts.push({ value: matched.count, provider: matched.provider, sourceUrl: matched.sourceUrl, checkedAt: fallback.checkedAt });
+    }
+    return { count: counts[0] ?? null, counts, citing, citingSource, page, nextPage, evidence: events };
+  }
+};
+
 // src/research/identifiers.ts
 function normalizeIdentifier(input2) {
   return /^(?:10\.|doi:|https?:\/\/(?:dx\.)?doi\.org\/)/i.test(input2.trim()) ? { kind: "doi", value: normalizeDoi(input2).toLowerCase() } : { kind: "isbn", value: normalizeIsbn(input2) };
 }
-var text = (value2) => typeof value2 === "string" ? value2.trim() : "";
-var first = (value2) => Array.isArray(value2) ? text(value2[0]) : "";
-var named = (value2) => Array.isArray(value2) ? value2.filter(isRecord).map((v) => text(v.name)).filter(Boolean).join("; ") : "";
-var doiUrl = (doi) => `https://doi.org/${encodeURIComponent(doi).replace(/%2F/gi, "/")}`;
+var text2 = (value2) => typeof value2 === "string" ? value2.trim() : "";
+var first = (value2) => Array.isArray(value2) ? text2(value2[0]) : "";
+var named = (value2) => Array.isArray(value2) ? value2.filter(isRecord).map((v) => text2(v.name)).filter(Boolean).join("; ") : "";
+var doiUrl2 = (doi) => `https://doi.org/${encodeURIComponent(doi).replace(/%2F/gi, "/")}`;
 function dateParts(value2) {
   if (!isRecord(value2) || !Array.isArray(value2["date-parts"]) || !Array.isArray(value2["date-parts"][0])) return "";
   const parts = value2["date-parts"][0];
@@ -39687,31 +39946,31 @@ function crossrefMetadata(data) {
     "posted-content": "preprint",
     dataset: "dataset"
   };
-  const itemType = types2[text(data.type)];
-  if (!itemType) throw new Error(`Unsupported Crossref source type: ${text(data.type) || "missing"}. Use a reviewed manual source type.`);
+  const itemType = types2[text2(data.type)];
+  if (!itemType) throw new Error(`Unsupported Crossref source type: ${text2(data.type) || "missing"}. Use a reviewed manual source type.`);
   const creators = [];
   for (const role of ["author", "editor"]) {
     if (!Array.isArray(data[role])) continue;
     for (const person of data[role].filter(isRecord)) {
-      if (text(person.family)) creators.push({ creatorType: role, firstName: text(person.given), lastName: text(person.family) });
-      else if (text(person.name)) creators.push({ creatorType: role, name: text(person.name) });
+      if (text2(person.family)) creators.push({ creatorType: role, firstName: text2(person.given), lastName: text2(person.family) });
+      else if (text2(person.name)) creators.push({ creatorType: role, name: text2(person.name) });
     }
   }
   const warnings = [];
   const containerField = itemType === "bookSection" ? "bookTitle" : itemType === "conferencePaper" ? "proceedingsTitle" : itemType === "preprint" ? "repository" : "publicationTitle";
   const metadata = metadataSchema.parse({ itemType, title: first(data.title), creators, fields: {
-    DOI: normalizeDoi(text(data.DOI)).toLowerCase(),
-    url: doiUrl(normalizeDoi(text(data.DOI))),
+    DOI: normalizeDoi(text2(data.DOI)).toLowerCase(),
+    url: doiUrl2(normalizeDoi(text2(data.DOI))),
     date: dateParts(data["published-print"]) || dateParts(data["published-online"]) || dateParts(data.published) || dateParts(data.issued),
-    ...publisherFields(itemType, text(data.publisher), named(data.institution), "Crossref", warnings),
+    ...publisherFields(itemType, text2(data.publisher), named(data.institution), "Crossref", warnings),
     [containerField]: first(data["container-title"]),
-    volume: text(data.volume),
-    issue: text(data.issue),
-    pages: text(data.page),
+    volume: text2(data.volume),
+    issue: text2(data.issue),
+    pages: text2(data.page),
     ISBN: first(data.ISBN),
     ISSN: first(data.ISSN),
-    language: text(data.language),
-    abstractNote: text(data.abstract).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+    language: text2(data.language),
+    abstractNote: text2(data.abstract).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
   } });
   return { metadata, warnings };
 }
@@ -39728,125 +39987,168 @@ function dataciteMetadata(data) {
     Preprint: "preprint",
     Software: "computerProgram"
   };
-  const itemType = mappings[text(types2.resourceType).replace(/[\s_-]/g, "")] ?? mappings[text(types2.resourceTypeGeneral)];
+  const itemType = mappings[text2(types2.resourceType).replace(/[\s_-]/g, "")] ?? mappings[text2(types2.resourceTypeGeneral)];
   if (!itemType) throw new Error("Unsupported DataCite source type. Use a reviewed manual source type.");
   const creators = [];
   for (const person of Array.isArray(data.creators) ? data.creators.filter(isRecord) : []) {
     const creatorType = itemType === "computerProgram" ? "programmer" : "author";
-    if (text(person.familyName)) creators.push({ creatorType, firstName: text(person.givenName), lastName: text(person.familyName) });
-    else if (text(person.name)) creators.push({ creatorType, name: text(person.name) });
+    if (text2(person.familyName)) creators.push({ creatorType, firstName: text2(person.givenName), lastName: text2(person.familyName) });
+    else if (text2(person.name)) creators.push({ creatorType, name: text2(person.name) });
   }
   const container = isRecord(data.container) ? data.container : {};
-  const publisher = isRecord(data.publisher) ? text(data.publisher.name) : text(data.publisher);
+  const publisher = isRecord(data.publisher) ? text2(data.publisher.name) : text2(data.publisher);
   const warnings = [];
   const metadata = metadataSchema.parse({
     itemType,
-    title: Array.isArray(data.titles) && isRecord(data.titles[0]) ? text(data.titles[0].title) : "",
+    title: Array.isArray(data.titles) && isRecord(data.titles[0]) ? text2(data.titles[0].title) : "",
     creators,
     fields: {
-      DOI: normalizeDoi(text(data.doi)).toLowerCase(),
-      url: doiUrl(normalizeDoi(text(data.doi))),
-      date: typeof data.publicationYear === "number" ? String(data.publicationYear) : text(data.publicationYear),
+      DOI: normalizeDoi(text2(data.doi)).toLowerCase(),
+      url: doiUrl2(normalizeDoi(text2(data.doi))),
+      date: typeof data.publicationYear === "number" ? String(data.publicationYear) : text2(data.publicationYear),
       // DataCite publisher/affiliations/HostingInstitution/Producer do not establish these roles.
       ...publisherFields(itemType, publisher, "", "DataCite", warnings),
-      [itemType === "bookSection" ? "bookTitle" : itemType === "conferencePaper" ? "proceedingsTitle" : itemType === "preprint" ? "repository" : "publicationTitle"]: text(container.title),
-      language: text(data.language),
-      versionNumber: text(data.version),
-      abstractNote: Array.isArray(data.descriptions) ? data.descriptions.filter(isRecord).filter((v) => v.descriptionType === "Abstract").map((v) => text(v.description)).join("\n") : ""
+      [itemType === "bookSection" ? "bookTitle" : itemType === "conferencePaper" ? "proceedingsTitle" : itemType === "preprint" ? "repository" : "publicationTitle"]: text2(container.title),
+      language: text2(data.language),
+      versionNumber: text2(data.version),
+      abstractNote: Array.isArray(data.descriptions) ? data.descriptions.filter(isRecord).filter((v) => v.descriptionType === "Abstract").map((v) => text2(v.description)).join("\n") : ""
     }
   });
   return { metadata, warnings };
 }
+function openAlexMetadata(work, record2) {
+  const location = isRecord(record2.primary_location) ? record2.primary_location : {};
+  const source = isRecord(location.source) ? location.source : {};
+  const mappings = {
+    book: "book",
+    "book-chapter": "bookSection",
+    dissertation: "thesis",
+    "conference-paper": "conferencePaper",
+    report: "report",
+    preprint: "preprint",
+    dataset: "dataset",
+    software: "computerProgram"
+  };
+  let itemType = mappings[work.type];
+  if (work.type === "article") {
+    if (record2.type_crossref === "journal-article") itemType = "journalArticle";
+    else if (record2.type_crossref === "proceedings-article") itemType = "conferencePaper";
+    else if (source.type === "journal") itemType = "journalArticle";
+    else if (source.type === "conference") itemType = "conferencePaper";
+  }
+  if (!itemType || !work.title || !work.doi) throw new Error("OpenAlex metadata lacks an unambiguous source type, title or DOI. Review the source manually.");
+  const authorships = Array.isArray(record2.authorships) ? record2.authorships : [];
+  const names = work.authors.map((name2, index) => {
+    const authorship = authorships[index];
+    return isRecord(authorship) && text2(authorship.raw_author_name) || name2;
+  });
+  const creators = names.filter(Boolean).map((name2) => ({ creatorType: itemType === "computerProgram" ? "programmer" : "author", name: name2 }));
+  const warnings = ["Metadata comes from the OpenAlex index. Review it before using the source."];
+  const biblio = isRecord(record2.biblio) ? record2.biblio : {};
+  const date5 = text2(record2.publication_date);
+  const container = {};
+  if (itemType === "journalArticle" && source.type === "journal") container.publicationTitle = text2(source.display_name);
+  if (itemType === "conferencePaper" && source.type === "conference") container.proceedingsTitle = text2(source.display_name);
+  if (itemType === "bookSection" && isRecord(record2.volume)) container.bookTitle = text2(record2.volume.display_name);
+  if (itemType === "preprint") container.repository = text2(source.display_name);
+  if (itemType === "thesis" || itemType === "report") publisherFields(itemType, "", "", "OpenAlex", warnings);
+  const pages = [...new Set([text2(biblio.first_page), text2(biblio.last_page)].filter(Boolean))].join("-");
+  const metadata = metadataSchema.parse({ itemType, title: work.title, creators, fields: {
+    DOI: work.doi,
+    url: doiUrl2(work.doi),
+    date: /^\d{4}-\d{2}-\d{2}$/.test(date5) ? date5 : String(work.years[0] ?? ""),
+    ...container,
+    volume: text2(biblio.volume),
+    issue: text2(biblio.issue),
+    pages,
+    language: text2(record2.language)
+  } });
+  return { metadata, warnings };
+}
+var identifierProviders = ["crossref", "datacite", "openalex", "openlibrary"];
 var IdentifierClient = class {
   constructor(fetch2 = globalThis.fetch) {
     this.fetch = fetch2;
   }
   fetch;
-  async request(url2) {
-    let response;
-    let payload;
-    try {
-      response = await this.fetch(url2, {
-        headers: { Accept: "application/json", "User-Agent": `ZoteroLaTeXAssistant/${APP_VERSION}` },
-        signal: AbortSignal.timeout(15e3),
-        redirect: "error"
-      });
-      if (!response.ok) {
-        await response.body?.cancel();
-        if (response.status === 404) return null;
-        throw new Error(`Metadata provider returned HTTP ${response.status}.`);
-      }
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("Empty metadata response.");
-      const chunks = [];
-      let size = 0;
-      try {
-        for (; ; ) {
-          const next = await reader.read();
-          if (next.done) break;
-          size += next.value.length;
-          if (size > 2 * 1024 * 1024) throw new Error("Metadata response exceeds 2 MiB.");
-          chunks.push(next.value);
-        }
-      } finally {
-        await reader.cancel();
-      }
-      payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    } catch (error62) {
-      throw new Error(`Identifier lookup failed: ${error62 instanceof Error ? error62.message : "provider unavailable"}`);
-    }
-    if (!isRecord(payload)) throw new Error("Invalid metadata response.");
-    return payload;
-  }
-  async lookup(input2, request2 = (url2) => this.request(url2)) {
+  async lookup(input2, { run = new ProviderRun(this.fetch), evidence: evidence2, openAlexFallback = true } = {}) {
     const identifier = normalizeIdentifier(input2);
     if (identifier.kind === "doi") {
-      const url3 = new URL(`https://api.crossref.org/works/${encodeURIComponent(identifier.value)}`);
-      const result2 = await request2(url3);
-      let mapped;
-      let provider;
-      let sourceUrl = url3.href;
-      if (result2) {
-        if (!isRecord(result2.message)) throw new Error("Invalid Crossref metadata response.");
-        mapped = crossrefMetadata(result2.message);
-        provider = "crossref";
-      } else {
-        const fallback = new URL(`https://api.datacite.org/dois/${encodeURIComponent(identifier.value)}`);
-        const result3 = await request2(fallback);
-        if (!result3) throw new Error("DOI not found at Crossref or DataCite.");
-        if (!isRecord(result3.data) || !isRecord(result3.data.attributes)) throw new Error("Invalid DataCite metadata response.");
-        mapped = dataciteMetadata(result3.data.attributes);
-        provider = "datacite";
-        sourceUrl = fallback.href;
+      const key3 = encodeURIComponent(identifier.value);
+      const registries = [
+        {
+          provider: "crossref",
+          url: new URL(`https://api.crossref.org/works/${key3}`),
+          decode: (body) => requireRecord(requireRecord(body).message),
+          map: crossrefMetadata
+        },
+        {
+          provider: "datacite",
+          url: new URL(`https://api.datacite.org/dois/${key3}`),
+          decode: (body) => requireRecord(requireRecord(requireRecord(body).data).attributes),
+          map: dataciteMetadata
+        }
+      ];
+      const failures = [];
+      for (const { provider, url: url3, decode: decode3, map: map2 } of registries) {
+        const result = await run.json(provider, url3, decode3);
+        evidence2?.push(result.evidence);
+        if (!result.value) {
+          failures.push(result.evidence);
+          continue;
+        }
+        const mapped = map2(result.value);
+        if (mapped.metadata.fields.DOI !== identifier.value) throw new ResearchFailure("mismatch", "The returned DOI does not match the requested identifier.");
+        const warnings = [...failures.filter(({ status }) => status !== "not-found").map(lookupFailure), ...mapped.warnings];
+        return { identifier, provider, sourceUrl: url3.href, metadata: mapped.metadata, warnings };
       }
-      if (mapped.metadata.fields.DOI !== identifier.value) throw new ResearchFailure("mismatch", "The returned DOI does not match the requested identifier.");
-      return { identifier, provider, sourceUrl, ...mapped };
+      if (openAlexFallback) {
+        const result = await new Literature(run).openAlexDoi(identifier.value);
+        evidence2?.push(result.evidence);
+        if (result.value) {
+          const { record: record2, work } = result.value;
+          const mapped = openAlexMetadata(work, record2);
+          return {
+            identifier,
+            provider: "openalex",
+            sourceUrl: work.sourceUrl,
+            metadata: mapped.metadata,
+            warnings: [...failures.map(lookupFailure), ...mapped.warnings]
+          };
+        }
+        failures.push(result.evidence);
+      }
+      throw new Error(`Identifier lookup failed. ${failures.map(lookupFailure).join(" ")}`);
     }
     const url2 = new URL("https://openlibrary.org/api/books");
     const bibkey = `ISBN:${identifier.value}`;
     url2.search = new URLSearchParams({ bibkeys: bibkey, format: "json", jscmd: "data" }).toString();
-    const result = await request2(url2);
-    const data = result?.[bibkey];
+    const lookup2 = await run.json("openlibrary", url2, requireRecord);
+    evidence2?.push(lookup2.evidence);
+    if (lookup2.evidence.status !== "ok" && lookup2.evidence.status !== "not-found") {
+      throw new Error(`Identifier lookup failed. ${lookupFailure(lookup2.evidence)}`);
+    }
+    const data = lookup2.value?.[bibkey];
     if (!isRecord(data)) throw new Error("ISBN not found at Open Library.");
     const identifiers = isRecord(data.identifiers) ? data.identifiers : {};
     const returnedIsbns = [identifiers.isbn_13, identifiers.isbn_10].flatMap((v) => Array.isArray(v) ? v : []);
     if (!returnedIsbns.some((v) => {
       try {
-        return normalizeIsbn(text(v)) === identifier.value;
+        return normalizeIsbn(text2(v)) === identifier.value;
       } catch {
         return false;
       }
     })) {
       throw new Error("The returned ISBN does not match the requested edition.");
     }
-    const title = text(data.title);
+    const title = text2(data.title);
     const metadata = metadataSchema.parse({
       itemType: "book",
-      title: title && text(data.subtitle) ? `${title}: ${text(data.subtitle)}` : title,
-      creators: Array.isArray(data.authors) ? data.authors.filter(isRecord).filter((v) => text(v.name)).map((v) => ({ creatorType: "author", name: text(v.name) })) : [],
+      title: title && text2(data.subtitle) ? `${title}: ${text2(data.subtitle)}` : title,
+      creators: Array.isArray(data.authors) ? data.authors.filter(isRecord).filter((v) => text2(v.name)).map((v) => ({ creatorType: "author", name: text2(v.name) })) : [],
       fields: {
         ISBN: identifier.value,
-        date: text(data.publish_date),
+        date: text2(data.publish_date),
         publisher: named(data.publishers),
         place: named(data.publish_places),
         numPages: Number.isInteger(data.number_of_pages) ? String(data.number_of_pages) : "",
@@ -39856,6 +40158,9 @@ var IdentifierClient = class {
     return { identifier, provider: "openlibrary", sourceUrl: url2.href, metadata, warnings: [] };
   }
 };
+function lookupFailure({ provider, status, reason }) {
+  return `${provider} (${status}): ${reason}`;
+}
 
 // src/zotero/pdfImport.ts
 var import_node_crypto5 = require("node:crypto");
@@ -40329,264 +40634,6 @@ async function syncCitedBibliography(root, config2, snapshot, client, options2, 
   ], "bibliography");
   return { ...base, status: "imported", projectFilesChanged: true, backup: backup ?? null };
 }
-
-// src/research/literature.ts
-var text2 = (value2) => typeof value2 === "string" ? value2.trim() : "";
-var countOf = (value2) => typeof value2 === "number" && Number.isSafeInteger(value2) && value2 >= 0 ? value2 : null;
-var doiUrl2 = (doi) => new URL(`https://doi.org/${encodeURIComponent(doi).replace(/%2F/i, "/")}`);
-function records(value2) {
-  if (!Array.isArray(value2)) throw new Error("Invalid provider result list.");
-  return value2.map(requireRecord);
-}
-function yearOf(value2) {
-  return typeof value2 === "number" && Number.isInteger(value2) && value2 >= 1e3 && value2 <= 9999 ? value2 : void 0;
-}
-function yearsFrom(value2) {
-  const parts = isRecord(value2) && Array.isArray(value2["date-parts"]) ? value2["date-parts"] : [];
-  return parts.flatMap((part) => Array.isArray(part) ? yearOf(part[0]) ?? [] : []);
-}
-function openAlexWork(data) {
-  const id = /^https:\/\/openalex\.org\/(W\d+)\/?$/i.exec(text2(data.id))?.[1]?.toUpperCase();
-  if (!id) throw new Error("Missing OpenAlex work identifier.");
-  const doi = normalizedDoi(text2(data.doi)) ?? null;
-  const title = text2(data.title) || text2(data.display_name);
-  const content2 = isRecord(data.content_urls) ? data.content_urls : {};
-  const has = isRecord(data.has_content) ? data.has_content : {};
-  const contentUrls = ["grobid_xml", "pdf"].flatMap((format) => {
-    const suffix = format === "pdf" ? "pdf" : "grobid-xml";
-    const url2 = `https://content.openalex.org/works/${id}.${suffix}`;
-    return content2[format] === url2 || has[format] === true ? [url2] : [];
-  });
-  const locations = [data.best_oa_location, ...Array.isArray(data.locations) ? data.locations : []].filter(isRecord).filter((location) => location.is_oa === true).flatMap((location) => [location.pdf_url, location.landing_page_url].flatMap((url2) => safeUrl(url2) ?? []));
-  const oa = isRecord(data.open_access) && data.open_access.is_oa === true ? safeUrl(data.open_access.oa_url) : null;
-  if (oa) locations.push(oa);
-  const year = yearOf(data.publication_year);
-  return {
-    provider: "openalex",
-    id,
-    doi,
-    title,
-    titles: [title],
-    type: text2(data.type),
-    sourceUrl: `https://openalex.org/${id}`,
-    authors: Array.isArray(data.authorships) ? data.authorships.map((entry) => {
-      if (!isRecord(entry)) return "";
-      return (isRecord(entry.author) ? text2(entry.author.display_name) : "") || text2(entry.raw_author_name);
-    }) : [],
-    years: year === void 0 ? [] : [year],
-    count: countOf(data.cited_by_count),
-    contentUrls,
-    locations: [...new Set(locations)]
-  };
-}
-function crossrefWork(data) {
-  const doi = normalizedDoi(text2(data.DOI));
-  if (!doi) throw new Error("Missing Crossref DOI.");
-  const title = Array.isArray(data.title) ? text2(data.title[0]) : "";
-  const subtitles = Array.isArray(data.subtitle) ? data.subtitle.map(text2).filter(Boolean) : [];
-  return {
-    provider: "crossref",
-    id: doi,
-    doi,
-    title,
-    titles: [title, ...subtitles.map((subtitle) => `${title}: ${subtitle}`)],
-    sourceUrl: `https://api.crossref.org/works/${encodeURIComponent(doi)}`,
-    type: text2(data.type),
-    authors: Array.isArray(data.author) ? data.author.map((entry) => {
-      if (!isRecord(entry)) return "";
-      return [text2(entry.family), text2(entry.given)].filter(Boolean).join(", ") || text2(entry.name);
-    }) : [],
-    years: [...new Set(["published-print", "published-online", "published", "issued"].flatMap((field) => yearsFrom(data[field])))],
-    count: countOf(data["is-referenced-by-count"]),
-    contentUrls: [],
-    locations: []
-  };
-}
-function publicWork({ provider, id, sourceUrl, doi, title, authors, years, type, count: count2 }) {
-  return { provider, id, sourceUrl, doi, title, authors, years, type, count: count2 };
-}
-function validDoi(reference2) {
-  if (!reference2.doi?.trim()) return void 0;
-  const doi = normalizedDoi(reference2.doi);
-  if (!doi) throw new Error("Enter a valid DOI.");
-  return doi;
-}
-function nameParts(value2) {
-  const comma = value2.indexOf(",");
-  const words = normalizedText(value2).split(" ");
-  return comma >= 0 ? { family: normalizedText(value2.slice(0, comma)), given: normalizedText(value2.slice(comma + 1)).split(" ").filter(Boolean) } : { family: words.at(-1) ?? "", given: words.slice(0, -1) };
-}
-function compareAuthor(expected, found) {
-  const a = nameParts(expected), b = nameParts(found);
-  if (!a.family || !b.family) return "unknown";
-  if (normalizedText(expected) === normalizedText(found)) return "match";
-  if (a.family !== b.family) {
-    const display = (name2) => [...name2.given, name2.family].join(" ");
-    return display(a) === display(b) ? "match" : "mismatch";
-  }
-  return a.given.slice(0, b.given.length).some((part, index) => {
-    const other = b.given[index];
-    return part !== other && (part[0] !== other[0] || part.length > 1 && other.length > 1);
-  }) ? "mismatch" : "match";
-}
-function compareTitle(title, work) {
-  const normalized2 = normalizedText(title ?? "");
-  const titles = work.titles.map(normalizedText).filter(Boolean);
-  if (!normalized2 || !titles.length) return "unknown";
-  return titles.includes(normalized2) ? "match" : "mismatch";
-}
-function compareAuthors(authors, work) {
-  if (!authors?.length || !work.authors.length) return "unknown";
-  const abbreviated = /^(?:others|et al\.?)$/i.test(authors.at(-1));
-  const expected = abbreviated ? authors.slice(0, -1) : authors;
-  if (!abbreviated && expected.length !== work.authors.length || expected.length > work.authors.length) return "mismatch";
-  const comparisons = expected.map((name2, index) => compareAuthor(name2, work.authors[index]));
-  if (comparisons.includes("mismatch")) return "mismatch";
-  return abbreviated || comparisons.includes("unknown") ? "unknown" : "match";
-}
-function compareYear(year, work) {
-  return year === void 0 || !work.years.length ? "unknown" : work.years.includes(year) ? "match" : "mismatch";
-}
-function matchesReference(reference2, work) {
-  const authors = reference2.authors?.length === 1 ? compareAuthor(reference2.authors[0], work.authors[0] ?? "") : compareAuthors(reference2.authors, work);
-  return compareTitle(reference2.title, work) !== "mismatch" && authors !== "mismatch" && compareYear(reference2.year, work) !== "mismatch";
-}
-var Literature = class {
-  constructor(run, options2 = {}) {
-    this.run = run;
-    this.options = options2;
-  }
-  run;
-  options;
-  lastCrossrefDoi;
-  crossrefDoi(doi) {
-    if (this.lastCrossrefDoi?.doi === doi) return this.lastCrossrefDoi.lookup;
-    const url2 = new URL(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
-    const lookup2 = this.run.json("crossref", url2, (body) => {
-      const record2 = requireRecord(requireRecord(body).message);
-      const work = crossrefWork(record2);
-      if (work.doi !== doi) throw new ResearchFailure("mismatch", "Crossref returned a different DOI.");
-      return { record: record2, work };
-    });
-    if (this.options.reuseCrossrefDoi) this.lastCrossrefDoi = { doi, lookup: lookup2 };
-    return lookup2;
-  }
-  async lookup(provider, doi) {
-    if (provider === "crossref") {
-      const { value: value2, evidence: source } = await this.crossrefDoi(doi);
-      return { value: value2?.work ?? null, evidence: source };
-    }
-    const url2 = new URL(`https://api.openalex.org/works/doi:${encodeURIComponent(doi).replace(/%2F/i, "/")}`);
-    return this.run.json("openalex", url2, (body) => {
-      const work = openAlexWork(requireRecord(body));
-      if (work.doi !== doi) throw new ResearchFailure(work.doi ? "mismatch" : "incomplete", "The provider did not return the requested DOI.");
-      return work;
-    });
-  }
-  search(provider, query, limit, firstAuthor) {
-    const url2 = new URL(provider === "openalex" ? "https://api.openalex.org/works" : "https://api.crossref.org/works");
-    if (provider === "openalex") {
-      url2.searchParams.set("search", query);
-      url2.searchParams.set("per_page", String(limit));
-    } else {
-      url2.searchParams.set("query.bibliographic", query);
-      if (firstAuthor) url2.searchParams.set("query.author", firstAuthor);
-      url2.searchParams.set("rows", String(limit));
-    }
-    return this.run.json(provider, url2, (body) => {
-      const record2 = requireRecord(body);
-      const works = provider === "openalex" ? records(record2.results).map(openAlexWork) : records(requireRecord(record2.message).items).map(crossrefWork);
-      if (!works.length) throw new ResearchFailure("not-found", "Search returned no works.");
-      const titled = works.filter((work) => normalizedText(work.title));
-      if (!titled.length) throw new ResearchFailure("incomplete", "Search results have no usable titles.");
-      return [...new Map(titled.map((work) => [work.doi ?? work.id, work])).values()].slice(0, limit);
-    });
-  }
-  async identify(provider, reference2) {
-    const doi = validDoi(reference2);
-    if (doi) return this.lookup(provider, doi);
-    const firstAuthor = reference2.authors?.[0];
-    if (!reference2.title || !firstAuthor || !normalizedText(reference2.title) || !normalizedText(firstAuthor)) {
-      return { value: null, evidence: evidence(provider, "", "incomplete", "Supply a DOI or both title and first author.") };
-    }
-    const result = await this.search(provider, reference2.title, 25, firstAuthor);
-    if (!result.value) return { ...result, value: null };
-    const plausible = result.value.filter((work) => compareTitle(reference2.title, work) === "match" && compareAuthor(firstAuthor, work.authors[0] ?? "") !== "mismatch");
-    const compatible = plausible.filter((work) => matchesReference(reference2, work));
-    const candidates = compatible.length ? compatible : plausible;
-    const first2 = candidates[0];
-    const report = (status, reason) => ({ value: null, evidence: { ...result.evidence, status, reason } });
-    if (candidates.length > 1) return report("ambiguous", "Multiple works match the title and author evidence.");
-    if (!first2) return report("not-found", "No result matches the title and first author.");
-    if (compareAuthor(firstAuthor, first2.authors[0] ?? "") !== "match") return report("incomplete", "First author is missing from the potential match.");
-    return { evidence: { ...result.evidence, sourceUrl: first2.sourceUrl }, value: first2 };
-  }
-  async check(reference2) {
-    const doi = validDoi(reference2);
-    const providers = doi ? ["crossref", "openalex"] : ["openalex", "crossref"];
-    const results = [];
-    for (const provider of providers) {
-      const lookup2 = await this.identify(provider, reference2);
-      const work = lookup2.value;
-      const fields = {
-        doi: doi && work?.doi === doi ? "match" : doi && lookup2.evidence.status === "mismatch" ? "mismatch" : "unknown",
-        title: work ? compareTitle(reference2.title, work) : "unknown",
-        authors: work ? compareAuthors(reference2.authors, work) : "unknown",
-        year: work ? compareYear(reference2.year, work) : "unknown"
-      };
-      const mismatch = Object.values(fields).includes("mismatch");
-      const complete = [fields.title, fields.authors, fields.year].every((field) => field === "match");
-      const report = work ? {
-        ...lookup2.evidence,
-        status: mismatch ? "mismatch" : complete ? "ok" : "incomplete",
-        reason: mismatch ? "Bibliographic fields differ." : complete ? "Title, authors and year match." : "Some bibliographic fields could not be compared."
-      } : lookup2.evidence;
-      results.push({ ...report, fields, work: work ? publicWork(work) : null });
-    }
-    const dois = new Set(results.flatMap((result) => result.work?.doi ?? []));
-    return { results, doiConflict: dois.size > 1, contentVerified: false };
-  }
-  async find(provider, reference2) {
-    const lookup2 = await this.identify(provider, reference2);
-    if (lookup2.value && !matchesReference(reference2, lookup2.value)) {
-      return { value: null, evidence: { ...lookup2.evidence, status: "mismatch", reason: "Reference metadata does not match the work." } };
-    }
-    return lookup2;
-  }
-  async citations(reference2, page, limit) {
-    const { value: work, evidence: source } = await this.find("openalex", reference2);
-    const events = [source];
-    const counts = [];
-    let citing = null, nextPage = null, citingSource = null;
-    if (work) {
-      if (work.count !== null) counts.push({ value: work.count, provider: work.provider, sourceUrl: work.sourceUrl, checkedAt: source.checkedAt });
-      else events.push(evidence("openalex", work.sourceUrl, "incomplete", "Citation count is missing."));
-      const url2 = new URL("https://api.openalex.org/works");
-      url2.search = new URLSearchParams({ filter: `cites:${work.id}`, page: String(page), per_page: String(limit), sort: "publication_date:desc" }).toString();
-      const list = await this.run.json("openalex", url2, (body) => {
-        const record2 = requireRecord(body);
-        const results = records(record2.results).map(openAlexWork);
-        const total = countOf(requireRecord(record2.meta).count);
-        if (total === null || total > (page - 1) * limit && !results.length) {
-          throw new ResearchFailure("incomplete", "Citing-works response is incomplete.");
-        }
-        return { results, total };
-      });
-      events.push(list.evidence);
-      citingSource = list.evidence;
-      if (list.value) {
-        citing = list.value.results.map(publicWork);
-        if (list.value.total > page * limit && (page + 1) * limit <= 1e4) nextPage = page + 1;
-      }
-    }
-    if (!counts.length || citing === null) {
-      const { value: matched, evidence: fallback } = await this.find("crossref", { ...reference2, doi: reference2.doi || work?.doi || void 0 });
-      events.push(matched?.count === null ? { ...fallback, status: "incomplete", reason: "Crossref citation count is missing." } : fallback);
-      if (matched?.count != null) counts.push({ value: matched.count, provider: matched.provider, sourceUrl: matched.sourceUrl, checkedAt: fallback.checkedAt });
-    }
-    return { count: counts[0] ?? null, counts, citing, citingSource, page, nextPage, evidence: events };
-  }
-};
 
 // src/zotero/collectionOperations.ts
 var import_node_crypto7 = require("node:crypto");
@@ -41599,8 +41646,8 @@ var ZoteroProjectService = class _ZoteroProjectService {
     await this.unchanged(scope);
     return { metadata: input2, completeness: metadataCompleteness(input2, Object.keys(template)) };
   }
-  async resolveIdentifier(scope, identifier, request2) {
-    const result = await new IdentifierClient(this.options.fetch ?? globalThis.fetch).lookup(identifier, request2);
+  async resolveIdentifier(scope, identifier, options2) {
+    const result = await new IdentifierClient(this.options.fetch ?? globalThis.fetch).lookup(identifier, options2);
     const template = await scope.client.itemTemplate(result.metadata.itemType);
     const roles = await scope.client.creatorTypes(result.metadata.itemType);
     const fields = {};
@@ -41640,7 +41687,7 @@ var ZoteroProjectService = class _ZoteroProjectService {
           throw new Error("This import requestId was already used with different input. Reuse the original identifier and overrides.");
         }
         const parsed = cached2.resolved;
-        if (!["crossref", "datacite", "openlibrary"].includes(String(parsed.provider)) || typeof parsed.sourceUrl !== "string" || !Array.isArray(parsed.warnings) || parsed.warnings.some((warning) => typeof warning !== "string")) throw new Error("Invalid import journal.");
+        if (!identifierProviders.some((provider) => provider === parsed.provider) || typeof parsed.sourceUrl !== "string" || !Array.isArray(parsed.warnings) || parsed.warnings.some((warning) => typeof warning !== "string")) throw new Error("Invalid import journal.");
         resolved = {
           identifier: identity,
           provider: parsed.provider,
@@ -41861,17 +41908,10 @@ var ZoteroProjectService = class _ZoteroProjectService {
           identifiers = fallback.value?.map((work) => work.id) ?? [];
         }
       }
-      const request2 = async (url2) => {
-        const provider = url2.hostname === "api.crossref.org" ? "crossref" : url2.hostname === "api.datacite.org" ? "datacite" : "openlibrary";
-        const lookup2 = await run.json(provider, url2, requireRecord);
-        evidence2.push(lookup2.evidence);
-        if (lookup2.evidence.status !== "ok" && lookup2.evidence.status !== "not-found") throw new Error(lookup2.evidence.reason);
-        return lookup2.value;
-      };
       for (const value2 of identifiers) {
         const start = evidence2.length;
         try {
-          candidates.push(await this.resolveIdentifier(scope, value2, request2));
+          candidates.push(await this.resolveIdentifier(scope, value2, { run, evidence: evidence2, openAlexFallback: false }));
         } catch (error62) {
           const message = error62 instanceof Error ? error62.message : "Identifier verification failed.";
           failures.push({ identifier: value2, message });
@@ -50951,7 +50991,7 @@ function articleRestricted(value2) {
   if (Array.isArray(value2)) return value2.some(articleRestricted);
   if (!isRecord(value2)) return false;
   const types2 = Array.isArray(value2["@type"]) ? value2["@type"] : [value2["@type"]];
-  return types2.some((type) => typeof type === "string" && /article$/i.test(type)) && (value2.isAccessibleForFree === false || text2(value2.isAccessibleForFree).toLowerCase() === "false") || Array.isArray(value2["@graph"]) && value2["@graph"].some(articleRestricted);
+  return types2.some((type) => typeof type === "string" && /article$/i.test(type)) && (value2.isAccessibleForFree === false || text(value2.isAccessibleForFree).toLowerCase() === "false") || Array.isArray(value2["@graph"]) && value2["@graph"].some(articleRestricted);
 }
 function inspectHtml(html, url2) {
   const root = parse3(html);
@@ -51182,7 +51222,7 @@ async function handoff2(content2, sourceUrl) {
 }
 function firstAuthorOf(value2) {
   const first2 = Array.isArray(value2) ? value2[0] : value2;
-  return isRecord(first2) ? text2(first2.text) || text2(first2.name) : text2(first2);
+  return isRecord(first2) ? text(first2.text) || text(first2.name) : text(first2);
 }
 function archiveMatch(reference2, doi, title, author, year) {
   if (doi && reference2.doi) return doi === reference2.doi;
@@ -51261,8 +51301,8 @@ var FulltextRun = class {
       const entries = Array.isArray(hit) ? hit : hit ? [hit] : [];
       const matches = entries.map((entry) => requireRecord(requireRecord(entry).info)).filter((item2) => archiveMatch(
         reference2,
-        normalizedDoi(text2(item2.doi)),
-        text2(item2.title).replace(/\.$/, ""),
+        normalizedDoi(text(item2.doi)),
+        text(item2.title).replace(/\.$/, ""),
         firstAuthorOf(isRecord(item2.authors) ? item2.authors.author : void 0),
         item2.year
       ));
@@ -51287,21 +51327,21 @@ var FulltextRun = class {
       if (!Array.isArray(hits)) throw new Error("Invalid Zenodo response.");
       const records2 = hits.map(requireRecord).map((item2) => {
         const metadata = requireRecord(item2.metadata);
-        return { item: item2, metadata, doi: normalizedDoi(text2(metadata.doi) || text2(item2.doi)) };
+        return { item: item2, metadata, doi: normalizedDoi(text(metadata.doi) || text(item2.doi)) };
       });
       const relatedVersions = records2.filter(({ metadata, doi }) => {
         const related = Array.isArray(metadata.related_identifiers) ? metadata.related_identifiers.filter(isRecord) : [];
-        return Boolean(reference2.doi && (doi === reference2.doi || related.some((entry) => normalizedDoi(text2(entry.identifier)) === reference2.doi && /^(?:isidenticalto|isversionof|isnewversionof|ispreviousversionof|isvariantformof)$/i.test(text2(entry.relation).replace(/[-_]/g, "")))));
+        return Boolean(reference2.doi && (doi === reference2.doi || related.some((entry) => normalizedDoi(text(entry.identifier)) === reference2.doi && /^(?:isidenticalto|isversionof|isnewversionof|ispreviousversionof|isvariantformof)$/i.test(text(entry.relation).replace(/[-_]/g, "")))));
       });
       const matches = relatedVersions.length ? relatedVersions : records2.filter(({ metadata, doi }) => {
         const primary = doi && !doi.startsWith("10.5281/zenodo.") ? doi : void 0;
-        return archiveMatch(reference2, primary, text2(metadata.title), firstAuthorOf(metadata.creators), metadata.publication_date);
+        return archiveMatch(reference2, primary, text(metadata.title), firstAuthorOf(metadata.creators), metadata.publication_date);
       });
       if (!relatedVersions.length && matches.length > 1) throw new ResearchFailure("ambiguous", "Several Zenodo records match the title and author.");
       const links = archiveLinks(matches.flatMap(({ item: item2, metadata }) => {
         const open3 = metadata.access_right === "open" || isRecord(item2.access) && item2.access.files === "public";
         if (!open3 || !Array.isArray(item2.files)) return [];
-        return item2.files.filter(isRecord).flatMap(({ key: key3, links: links2 }) => /\.(?:pdf|xml)$/i.test(text2(key3)) && isRecord(links2) ? [links2.content ?? links2.self] : []);
+        return item2.files.filter(isRecord).flatMap(({ key: key3, links: links2 }) => /\.(?:pdf|xml)$/i.test(text(key3)) && isRecord(links2) ? [links2.content ?? links2.self] : []);
       }));
       if (!matches.length) throw new ResearchFailure("not-found", "Zenodo returned no matching record.");
       if (!links.length) throw new ResearchFailure("not-found", "Matching Zenodo records have no public PDF or XML.");
@@ -51335,7 +51375,7 @@ var FulltextRun = class {
       this.events.push(fromCrossref);
       reference2.doi = match2?.doi ?? void 0;
     }
-    if (!found && reference2.doi) found = await this.documents([doiUrl2(reference2.doi).href], "publisher", reference2);
+    if (!found && reference2.doi) found = await this.documents([doiUrl(reference2.doi).href], "publisher", reference2);
     if (!found) found = await this.documents([...this.archives], "linked-archive", reference2);
     if (!found && !this.deadline.aborted && (!work?.type || /article|proceeding|conference/i.test(work.type))) {
       found = await this.documents(await this.dblp(reference2), "dblp", reference2);
@@ -51530,7 +51570,7 @@ var completeness = external_exports.object({
 });
 var provenance = external_exports.object({
   identifier: external_exports.object({ kind: external_exports.enum(["doi", "isbn"]), value: external_exports.string() }),
-  provider: external_exports.enum(["crossref", "datacite", "openlibrary"]),
+  provider: external_exports.enum(identifierProviders),
   sourceUrl: external_exports.string()
 });
 var createResult = external_exports.union([
@@ -51887,7 +51927,7 @@ function createServer(service) {
   );
   tool(
     "zotero_lookup_identifier",
-    "Look up a DOI (including doi.org URL) at Crossref, with DataCite fallback for unregistered Crossref identifiers, or a checksum-validated ISBN-10/13 at Open Library. Sends only the identifier to public providers. Returns type-specific Zotero metadata, provenance and missing-field guidance. Does not create anything. Review provider facts; no fabricated values, full text or PDFs.",
+    "Preview Zotero metadata for a DOI or checksum-validated ISBN. For DOI lookups, try Crossref, then DataCite and OpenAlex on a miss or outage. OpenAlex results require an exact DOI and a supported source type. ISBN lookups use Open Library. The result includes the provider and source URL.",
     external_exports.object({ identifier: external_exports.string().trim().min(1).max(500) }).strict(),
     provenance.extend({ metadata: metadataSchema, warnings: external_exports.array(external_exports.string()), completeness }),
     ({ identifier }) => service.lookupIdentifier(identifier),

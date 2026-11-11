@@ -160,17 +160,19 @@ export class Literature {
     return lookup;
   }
 
-  async lookup(provider: Index, doi: string) {
-    if (provider === "crossref") {
-      const { value, evidence: source } = await this.crossrefDoi(doi);
-      return { value: value?.work ?? null, evidence: source };
-    }
+  openAlexDoi(doi: string) {
     const url = new URL(`https://api.openalex.org/works/doi:${encodeURIComponent(doi).replace(/%2F/i, "/")}`);
     return this.run.json("openalex", url, (body) => {
-      const work = openAlexWork(requireRecord(body));
+      const record = requireRecord(body);
+      const work = openAlexWork(record);
       if (work.doi !== doi) throw new ResearchFailure(work.doi ? "mismatch" : "incomplete", "The provider did not return the requested DOI.");
-      return work;
+      return { record, work };
     });
+  }
+
+  async lookup(provider: Index, doi: string) {
+    const { value, evidence: source } = await (provider === "crossref" ? this.crossrefDoi(doi) : this.openAlexDoi(doi));
+    return { value: value?.work ?? null, evidence: source };
   }
 
   search(provider: Index, query: string, limit: number, firstAuthor?: string) {
