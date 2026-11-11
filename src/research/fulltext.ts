@@ -100,7 +100,7 @@ class FulltextRun {
       const fetched = await this.download(url, signal, provider === "openalex-content" ? this.literature.run.openAlexKey : undefined);
       final = fetched.url;
       return fetched.response;
-    }, (result) => readDocument(result, final), this.deadline);
+    }, (result) => readDocument(result, final), { document: true, deadline: this.deadline });
     this.visited.add(final.href);
     if (provider === "publisher" && final.href !== url.href) this.publicationUrl ??= final.href;
     return { item: response.value, event: { ...response.evidence, provider, sourceUrl: final.href } };

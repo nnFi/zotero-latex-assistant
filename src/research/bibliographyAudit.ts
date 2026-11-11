@@ -68,7 +68,7 @@ function compareCitations(sources: readonly ProjectSource[], keys: readonly stri
 
 type Entry = ReturnType<typeof entryOf>;
 type CitationComparison = ReturnType<typeof compareCitations>;
-type AuditResult = { citationKey: string; title: string; pubcheck: Awaited<ReturnType<PubcheckClient["checkBibliographyEntry"]>>;
+type AuditResult = { citationKey: string; title: string; pubcheck: Awaited<ReturnType<PubcheckClient["verify"]>>;
   reference: Awaited<ReturnType<Literature["check"]>> | null; problem: string | null };
 interface AuditPage {
   status: "checked" | "ambiguous" | "not-found";
@@ -156,7 +156,7 @@ export class BibliographyAudit {
     const pubcheckClient = new PubcheckClient();
     const results: AuditResult[] = [];
     for (const entry of audit.entries.slice(offset, offset + pageSize)) {
-      const pubcheck = await pubcheckClient.checkBibliographyEntry(entry.source, audit.literature.run);
+      const pubcheck = await pubcheckClient.verify(entry.source, audit.literature.run);
       if (["unavailable", "skipped"].includes(pubcheck.evidence.status)) audit.pubcheckUnavailable = true;
       let reference: AuditResult["reference"] = null, problem: string | null = null;
       try {

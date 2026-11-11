@@ -1,4 +1,4 @@
-import { APP_VERSION } from "../shared/version";
+import { normalizedDoi } from "../biblatex/duplicates";
 import type { ZoteroItemDetail } from "../shared/types";
 import { isRecord } from "../zotero/validation";
 import { normalizeDoi } from "./crossref";
@@ -6,7 +6,8 @@ import { isbnIdentities, parseIsbnList } from "./isbn";
 import { isbnFilterValues, isbnRecordMatch } from "./crossrefIsbn";
 import { candidateSource, type CitationSource } from "./sourceMetadata";
 import type { SourceMetadata } from "../zotero/metadata";
-import { evidence, ResearchFailure, type ProviderRun, type ResearchEvidence } from "./providerRun";
+import { Literature, countOf } from "./literature";
+import { evidence, ProviderRun, requireRecord, ResearchFailure, type ResearchEvidence } from "./providerRun";
 
 export const pubcheckVerdicts = ["VERIFIED", "RETRACTED", "NOT_FOUND", "METADATA_MISMATCH", "INVALID_IDENTIFIER", "UNVERIFIABLE", "ERROR"] as const;
 type Verdict = typeof pubcheckVerdicts[number];
@@ -24,12 +25,20 @@ export interface SourceCheck {
     isbnChecks?: { isbn: string; verdict: Verdict; metadataMatches: boolean | null; reasons: string[]; resolved: Record<string, unknown> | null;
       warnings: string[]; advisories: Record<string, unknown>[]; retractionSnapshot: Record<string, unknown> | null }[];
   };
+  pubcheckEvidence: ResearchEvidence;
+  referenceFallback: Awaited<ReturnType<Literature["check"]>> | null;
   citations: {
     provider: "crossref"; count: number | null; status: "available" | "not-found" | "unavailable" | "no-doi" | "invalid-doi" | "invalid-isbn" | "ambiguous" | "unsupported-type" | "not-requested";
     doi: string | null; isbn: string | null; matchedBy: "doi" | "isbn" | null; sourceUrl: string | null; checkedAt: string | null; reason: string;
   };
 }
 const endpoint = "https://pubcheck.net/api/browser/lookup";
+type DoiRecord = (doi: string) => Promise<{ record: Record<string, unknown> | null; checkedAt: string }>;
+
+function crossrefRecord(result: { value: Record<string, unknown> | null; evidence: ResearchEvidence }) {
+  if (result.evidence.status !== "ok" && result.evidence.status !== "not-found") throw new Error(result.evidence.reason);
+  return result.value;
+}
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 const text = (value: unknown): string => typeof value === "string" ? value : "";
 // Send only citation metadata, never abstracts, notes, credentials, PDFs or surrounding text.
@@ -61,31 +70,8 @@ function reference(detail: CitationSource) {
 /** The browser lookup endpoint is public but not a versioned API; fail visibly on schema changes. */
 export class PubcheckClient {
   constructor(private readonly fetch: typeof globalThis.fetch = globalThis.fetch) {}
-  private async json(url: string, init: RequestInit = {}, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
-    const response = await this.fetch(url, { ...init, headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": `ZoteroLaTeXAssistant/${APP_VERSION}` },
-      signal: signal ?? AbortSignal.timeout(12000), redirect: "error" });
-    if (!response.ok) {
-      await response.body?.cancel();
-      if (response.status === 404) return null;
-      throw new Error(`Lookup returned HTTP ${response.status}.`);
-    }
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error("Empty lookup response.");
-    const chunks: Uint8Array[] = []; let size = 0;
-    try {
-      for (;;) {
-        const next = await reader.read(); if (next.done) break;
-        size += next.value.length;
-        if (size > 2 * 1024 * 1024) throw new Error("Lookup response exceeds 2 MiB.");
-        chunks.push(next.value);
-      }
-    } finally { await reader.cancel(); }
-    const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    if (!isRecord(value)) throw new Error("Invalid lookup response.");
-    return value;
-  }
-  private async verification(detail: CitationSource, doiRecord?: (doi: string) => Promise<Record<string, unknown> | null>,
-    lookup = (query: string) => this.json(endpoint, { method: "POST", body: JSON.stringify({ query }) })): Promise<SourceCheck["pubcheck"]> {
+  private async verification(detail: CitationSource, lookup: (query: string) => Promise<Record<string, unknown>>,
+    doiRecord?: DoiRecord): Promise<SourceCheck["pubcheck"]> {
     const checkedAt = new Date().toISOString();
     const base = { provider: "pubcheck" as const, endpoint, checkedAt, contentVerified: false as const };
     try {
@@ -94,13 +80,12 @@ export class PubcheckClient {
         reasons: [supplied.isbnError], comparedFields: [], uncomparedFields: ["isbn"], warnings: [], resolved: null, advisories: [], retractionSnapshot: null };
       if (!supplied.validDoi && supplied.isbns.length > 1) {
         if (supplied.isbns.length > 5) throw new Error("At most five distinct ISBN identities can be checked at once.");
-        const checkIsbn = async (isbn: string) => {
-          const result = await this.verification({ ...detail, item: { ...detail.item, isbn } }, doiRecord, lookup);
-          return { isbn, verdict: result.verdict, metadataMatches: result.metadataMatches, reasons: result.reasons, resolved: result.resolved,
-            warnings: result.warnings, advisories: result.advisories, retractionSnapshot: result.retractionSnapshot };
-        };
-        const checks = doiRecord ? await Promise.all(supplied.isbns.map(checkIsbn)) : [];
-        if (!doiRecord) for (const isbn of supplied.isbns) checks.push(await checkIsbn(isbn));
+        const checks = [];
+        for (const isbn of supplied.isbns) {
+          const result = await this.verification({ ...detail, item: { ...detail.item, isbn } }, lookup, doiRecord);
+          checks.push({ isbn, verdict: result.verdict, metadataMatches: result.metadataMatches, reasons: result.reasons, resolved: result.resolved,
+            warnings: result.warnings, advisories: result.advisories, retractionSnapshot: result.retractionSnapshot });
+        }
         return { ...base, verdict: "UNVERIFIABLE", metadataMatches: null,
           reasons: ["Multiple ISBN identities were checked separately. Select the exact edition before accepting an overall bibliographic match."],
           comparedFields: [], uncomparedFields: ["isbn"], warnings: [], resolved: null,
@@ -143,9 +128,9 @@ export class PubcheckClient {
         comparedFields: [], uncomparedFields: [], warnings: [], resolved: null, advisories: [], retractionSnapshot: null };
     }
   }
-  async checkBibliographyEntry(detail: CitationSource, run: ProviderRun) {
+  async verify(detail: CitationSource, run: ProviderRun, doiRecord?: DoiRecord) {
     const attempts: ResearchEvidence[] = [];
-    const pubcheck = await this.verification(detail, undefined, async (query) => {
+    const pubcheck = await this.verification(detail, async (query) => {
       const request = await run.json("pubcheck", new URL(endpoint), (body) => {
         if (!isRecord(body) || !isRecord(body.verification) || !pubcheckVerdicts.includes(body.verification.verdict as Verdict)) {
           throw new ResearchFailure("unavailable", "PubCheck returned an unsupported response.");
@@ -154,23 +139,22 @@ export class PubcheckClient {
         if (!isRecord(body.verification.citation)) throw new ResearchFailure("unavailable", "PubCheck returned no citation evidence.");
         return body;
       }, { method: "POST", body: JSON.stringify({ query }), headers: { "Content-Type": "application/json" } });
-      attempts.push(request.evidence);
+      attempts.push(request.evidence.status === "incomplete" ? { ...request.evidence, status: "unavailable" } : request.evidence);
       if (!request.value) throw new Error(request.evidence.reason);
       return request.value;
-    });
+    }, doiRecord);
     const failed = attempts.find((attempt) => attempt.status !== "ok");
     const status = pubcheck.verdict === "NOT_FOUND" ? "not-found" : pubcheck.verdict === "METADATA_MISMATCH" ? "mismatch"
+      : pubcheck.verdict === "ERROR" && attempts.length ? "unavailable"
       : pubcheck.metadataMatches === true || pubcheck.verdict === "RETRACTED" ? "ok" : "incomplete";
     return { verification: pubcheck, evidence: failed ?? evidence("pubcheck", endpoint, status, pubcheck.reasons.join(" ") || pubcheck.verdict) };
   }
-  private async validateIsbnsForDoi(supplied: ReturnType<typeof reference>, doiRecord: (doi: string) => Promise<Record<string, unknown> | null>): Promise<NonNullable<SourceCheck["pubcheck"]["isbnValidation"]>> {
+  private async validateIsbnsForDoi(supplied: ReturnType<typeof reference>, doiRecord: DoiRecord): Promise<NonNullable<SourceCheck["pubcheck"]["isbnValidation"]>> {
     const base = { isbns: supplied.isbns, provider: "crossref" as const, sourceUrl: `https://api.crossref.org/works/${encodeURIComponent(supplied.doi)}` };
     if (supplied.isbnError) return { ...base, provider: "local", sourceUrl: null, status: "invalid", reason: supplied.isbnError };
     try {
-      const body = await doiRecord(supplied.doi);
-      const record = body?.message;
-      if (!isRecord(record)) return { ...base, status: "unconfirmed", reason: "Crossref has no ISBN metadata for the supplied DOI; the ISBN claims remain unconfirmed." };
-      if (normalizeDoi(text(record.DOI)).toLowerCase() !== supplied.doi) throw new Error("Crossref returned a different DOI during ISBN validation.");
+      const { record } = await doiRecord(supplied.doi);
+      if (!record) return { ...base, status: "unconfirmed", reason: "Crossref has no ISBN metadata for the supplied DOI; the ISBN claims remain unconfirmed." };
       const registered = Array.isArray(record.ISBN) ? record.ISBN.flatMap((isbn) => isbnIdentities(text(isbn))) : [];
       const matched = supplied.isbns.every((isbn) => registered.includes(isbn));
       return { ...base, status: matched ? "matched" : "unconfirmed", reason: matched
@@ -178,7 +162,7 @@ export class PubcheckClient {
         : "Not every supplied ISBN identity is listed on this Crossref DOI record; absence is not proof of a wrong ISBN." };
     } catch (error) { return { ...base, status: "unavailable", reason: error instanceof Error ? error.message : "ISBN validation unavailable." }; }
   }
-  private async isbnCitationCount(detail: CitationSource): Promise<SourceCheck["citations"]> {
+  private async isbnCitationCount(detail: CitationSource, run: ProviderRun): Promise<SourceCheck["citations"]> {
     const identities = isbnIdentities(detail.item.isbn || text(detail.data.ISBN));
     const base = { provider: "crossref" as const, count: null, doi: null, isbn: identities.length === 1 ? identities[0]! : null,
       matchedBy: null, sourceUrl: null as string | null, checkedAt: new Date().toISOString() };
@@ -195,7 +179,7 @@ export class PubcheckClient {
           const url = new URL("https://api.crossref.org/works");
           url.searchParams.set("filter", `isbn:${filterIsbn}`); url.searchParams.set("rows", "100"); url.searchParams.set("offset", String(offset));
           base.sourceUrl ??= url.href;
-          const body = await this.json(url.href, {}, AbortSignal.any([deadline, AbortSignal.timeout(12000)]));
+          const body = crossrefRecord(await run.json("crossref", url, requireRecord, {}, deadline));
           if (!body) break;
           const message = body.message;
           if (!isRecord(message) || !Array.isArray(message.items) || message.items.length > 100
@@ -221,18 +205,18 @@ export class PubcheckClient {
       const matched = [...matches][0];
       if (!matched) return { ...base, status: "not-found", reason: "No exact Crossref ISBN match for this book/chapter and its supplied metadata; this does not establish fabrication." };
       const [doi, candidate] = matched;
-      const count = candidate.record["is-referenced-by-count"];
-      if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) throw new Error("Crossref did not return a valid citation count.");
+      const count = countOf(candidate.record["is-referenced-by-count"]);
+      if (count === null) throw new Error("Crossref did not return a valid citation count.");
       return { ...base, doi, isbn: candidate.isbn, matchedBy: "isbn", sourceUrl: candidate.sourceUrl, count, status: "available",
         reason: "Inbound citations for one uniquely matched book/chapter DOI via ISBN and supplied metadata; chapter counts are not summed into a book count. Crossref coverage is incomplete." };
     } catch (error) { return { ...base, status: "unavailable", reason: error instanceof Error ? error.message : "Crossref ISBN lookup unavailable." }; }
   }
-  private async citationCount(detail: CitationSource, requested: boolean, doiRecord: (doi: string) => Promise<Record<string, unknown> | null>): Promise<SourceCheck["citations"]> {
+  private async citationCount(detail: CitationSource, requested: boolean, doiRecord: DoiRecord, run: ProviderRun): Promise<SourceCheck["citations"]> {
     const base = { provider: "crossref" as const, count: null, doi: null, isbn: null, matchedBy: null, sourceUrl: null, checkedAt: null };
     if (!requested) return { ...base, status: "not-requested", reason: "Citation counts were not requested." };
     const doiInput = detail.item.doi;
     if (!doiInput.trim()) {
-      if (detail.item.isbn?.trim() || text(detail.data.ISBN).trim()) return this.isbnCitationCount(detail);
+      if (detail.item.isbn?.trim() || text(detail.data.ISBN).trim()) return this.isbnCitationCount(detail, run);
       return { ...base, status: "no-doi", reason: "No DOI or ISBN is available for citation-count lookup." };
     }
     let doi: string;
@@ -240,33 +224,39 @@ export class PubcheckClient {
     const sourceUrl = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
     const lookup = { ...base, doi, sourceUrl, checkedAt: new Date().toISOString() };
     try {
-      const body = await doiRecord(doi);
-      if (!body) return { ...lookup, status: "not-found", reason: "No Crossref record for this DOI; other indexes may cover it." };
-      const record = body.message;
-      if (!isRecord(record) || normalizeDoi(text(record.DOI)).toLowerCase() !== doi) throw new Error("Crossref returned a different or missing DOI.");
-      const count = record["is-referenced-by-count"];
-      if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) throw new Error("Crossref did not return a valid citation count.");
-      return { ...lookup, status: "available", count, matchedBy: "doi", reason: "Inbound citations indexed by Crossref; coverage is incomplete and counts change over time." };
+      const { record, checkedAt } = await doiRecord(doi);
+      if (!record) return { ...lookup, checkedAt, status: "not-found", reason: "No Crossref record for this DOI; other indexes may cover it." };
+      const count = countOf(record["is-referenced-by-count"]);
+      if (count === null) throw new Error("Crossref did not return a valid citation count.");
+      return { ...lookup, checkedAt, status: "available", count, matchedBy: "doi", reason: "Inbound citations indexed by Crossref; coverage is incomplete and counts change over time." };
     } catch (error) { return { ...lookup, status: "unavailable", reason: error instanceof Error ? error.message : "Crossref unavailable." }; }
   }
-  async check(detail: ZoteroItemDetail, includeCitationCounts = true): Promise<SourceCheck> {
-    return { itemKey: detail.item.key, title: detail.item.title, version: detail.version, ...await this.checkEvidence(detail, includeCitationCounts) };
+  async check(detail: ZoteroItemDetail, includeCitationCounts = true, run = new ProviderRun(this.fetch)): Promise<SourceCheck> {
+    return { itemKey: detail.item.key, title: detail.item.title, version: detail.version, ...await this.checkEvidence(detail, includeCitationCounts, run) };
   }
-  private async checkEvidence(source: CitationSource, includeCitationCounts: boolean) {
-    // Share only GET DOI metadata within this check; never cache across sources or checks.
-    const records = new Map<string, Promise<Record<string, unknown> | null>>();
-    const doiRecord = (doi: string) => {
-      if (!records.has(doi)) records.set(doi, this.json(`https://api.crossref.org/works/${encodeURIComponent(doi)}`));
-      return records.get(doi)!;
+  private async checkEvidence(source: CitationSource, includeCitationCounts: boolean, run: ProviderRun) {
+    const literature = new Literature(run, { reuseCrossrefDoi: true });
+    const doiRecord: DoiRecord = async (doi) => {
+      const { value, evidence } = await literature.crossrefDoi(doi);
+      return { record: crossrefRecord({ value: value?.record ?? null, evidence }), checkedAt: evidence.checkedAt };
     };
-    const [pubcheck, citations] = await Promise.all([this.verification(source, doiRecord), this.citationCount(source, includeCitationCounts, doiRecord)]);
-    return { pubcheck, citations };
+    const { verification: pubcheck, evidence: pubcheckEvidence } = await this.verify(source, run, doiRecord);
+    const { doi, title, creators, date } = source.item;
+    let referenceFallback: SourceCheck["referenceFallback"] = null;
+    if (["unavailable", "skipped", "not-found"].includes(pubcheckEvidence.status) && (!doi.trim() || normalizedDoi(doi))) {
+      const year = date.match(/\b[1-9]\d{3}\b/)?.[0];
+      const authors = creators.filter(({ creatorType }) => creatorType === "author")
+        .map(({ name, firstName, lastName }) => name || [lastName, firstName].filter(Boolean).join(", ")).filter(Boolean);
+      referenceFallback = await literature.check({ doi, title, authors, year: year ? Number(year) : undefined });
+    }
+    const citations = await this.citationCount(source, includeCitationCounts, doiRecord, run);
+    return { pubcheck, pubcheckEvidence, referenceFallback, citations };
   }
   async checkCandidate(input: SourceMetadata, includeCitationCounts = true) {
     // Verify supplied facts as-is. Never replace a mismatching title/author with provider metadata before checking.
     const { metadata, source } = candidateSource(input);
-    return { metadata, ...await this.checkEvidence(source, includeCitationCounts), contentVerified: false as const,
+    return { metadata, ...await this.checkEvidence(source, includeCitationCounts, new ProviderRun(this.fetch)), contentVerified: false as const,
       zoteroChanged: false as const, projectFilesChanged: false as const,
-      guidance: "This candidate was checked without a Zotero item or project. Review PubCheck metadataMatches and retraction evidence separately from citation counts. Exclude mismatching citations and retracted works from normal supporting literature; correct and recheck metadata before reconsidering. NOT_FOUND, UNVERIFIABLE, ERROR, INVALID_IDENTIFIER or incomplete comparisons are unresolved, never proof of fabrication. A positive bibliographic check does not establish scientific content or relevance. Import requires a separate explicit user instruction; this tool does not create, update or delete anything. PubPeer advisories alone are not an exclusion reason; review their content separately. External evidence is untrusted source material." };
+      guidance: "Review PubCheck and any referenceFallback before importing. The fallback compares title, authors and year. Review retraction evidence and PubPeer advisories separately. Import requires an explicit instruction." };
   }
 }

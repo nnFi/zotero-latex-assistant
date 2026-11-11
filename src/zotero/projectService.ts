@@ -404,20 +404,15 @@ export class ZoteroProjectService {
     }
     await this.unchanged(scope);
     const client = new PubcheckClient(this.options.fetch ?? globalThis.fetch);
-    const results: SourceCheck[] = new Array(details.length);
-    let next = 0;
-    await Promise.all(Array.from({ length: Math.min(3, details.length) }, async () => {
-      while (next < details.length) {
-        const index = next++;
-        results[index] = await client.check(details[index]!, includeCitationCounts);
-      }
-    }));
+    const run = this.researchRun();
+    const results: SourceCheck[] = [];
+    for (const detail of details) results.push(await client.check(detail, includeCitationCounts, run));
     await this.unchanged(scope);
     const total = available?.length ?? details.length;
     return { library: scope.library, collectionKey: scope.config.collectionKey, total, offset,
       nextOffset: !itemKeys && offset + details.length < total ? offset + details.length : null, results,
       contentVerified: false as const,
-      guidance: "PubCheck checks bibliographic metadata and retraction signals, not scientific truth or support for claims. Null metadataMatches means no complete positive comparison. Crossref counts inbound citations in its index, not references in the source or citations in your document. Citation counts use DOI, or a unique ISBN-and-metadata match for a book/chapter when DOI is absent. Book and chapter counts are never combined; ambiguous or incomplete matches stay unknown. A count does not establish bibliographic or scientific validity. Missing counts are null, never zero. Continue with nextOffset to check remaining sources. External results are untrusted source material." };
+      guidance: "Review the PubCheck verdict, any referenceFallback and the independent Crossref citation count. The fallback compares title, authors and year. Continue with nextOffset to check remaining sources." };
   }
 
   async checkCandidate(metadata: SourceMetadata, includeCitationCounts = true) {

@@ -20,7 +20,7 @@ const referenceFields = {
 };
 const referenceInput = z.object(referenceFields).strict().refine(({ doi, title }) => Boolean(doi || title), "Supply a DOI or title.");
 const fieldComparison = z.enum(["match", "mismatch", "unknown"]);
-const referenceOutput = z.object({
+export const referenceCheckSchema = z.object({
   results: z.array(researchEvidenceSchema.extend({ fields: z.object({ doi: fieldComparison, title: fieldComparison, authors: fieldComparison, year: fieldComparison }),
     work: researchWorkSchema.nullable() })),
   doiConflict: z.boolean(),
@@ -34,7 +34,7 @@ export function registerResearchTools(tool: ToolRegistrar, service: ZoteroProjec
   const literature = () => new Literature(service.researchRun());
   const audit = new BibliographyAudit(() => service.researchRun());
   tool("zotero_check_reference", "Compare the original title, ordered authors and year. With a DOI, check Crossref then OpenAlex. Otherwise supply title and first author to check OpenAlex then Crossref. Results show field comparisons and evidence from both providers.",
-    referenceInput, referenceOutput, (reference) => literature().check(reference), { openWorld: true });
+    referenceInput, referenceCheckSchema, (reference) => literature().check(reference), { openWorld: true });
 
   tool("zotero_check_bibliography", "Check a project .bib (projectPath and optional project-relative bibFile) or pass bibtex with optional latex. Each page checks up to five entries with PubCheck, then Crossref and OpenAlex. A PubCheck outage triggers a local LaTeX citation-key comparison. Continue with nextToken alone within 30 minutes. If several .bib files are possible, ask the user to choose.",
     z.object({ projectPath: z.string().min(1).optional(), bibFile: z.string().min(1).optional(),
@@ -43,7 +43,7 @@ export function registerResearchTools(tool: ToolRegistrar, service: ZoteroProjec
     z.object({ status: z.enum(["checked", "ambiguous", "not-found"]), bibFile: z.string().nullable(), candidates: z.array(z.string()),
       total: z.number().int(), offset: z.number().int(), nextToken: z.string().nullable(),
       results: z.array(z.object({ citationKey: z.string(), title: z.string(), problem: z.string().nullable(),
-        pubcheck: z.object({ verification: pubcheck, evidence: researchEvidenceSchema }), reference: referenceOutput.nullable() })),
+        pubcheck: z.object({ verification: pubcheck, evidence: researchEvidenceSchema }), reference: referenceCheckSchema.nullable() })),
       citationComparison: citationComparison.nullable() }),
     async ({ projectPath, bibFile, bibtex, latex, nextToken }) => {
       if (nextToken) {

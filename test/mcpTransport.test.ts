@@ -32,6 +32,7 @@ globalThis.fetch=async(input,init)=>{
    const title=query.match(/\btitle = \{([^}]*)\}/)?.[1]||"";
    const doi=query.match(/\bdoi = \{([^}]*)\}/)?.[1]||null;
    const isbn=query.match(/\bisbn = \{([^}]*)\}/)?.[1]||null;
+   if(title==="Fallback protocol book") return json({},503);
    return json({verification:{verdict:title==="Mismatching candidate"?"METADATA_MISMATCH":"VERIFIED",citation:{title,doi,isbn},
      compared_fields:["title","authors","year","doi","isbn","journal"],reasons:["provider evidence"],resolved:{title,doi,isbn,source:"crossref"}}});
  }
@@ -339,6 +340,14 @@ test("external candidate MCP check runs before Zotero setup with the local API b
   const mismatch = await client.callTool({ name: "zotero_check_candidate", arguments: { metadata: { itemType: "book", title: "Mismatching candidate" }, includeCitationCounts: false } });
   assert(!mismatch.isError);
   assert.equal((mismatch.structuredContent as { result: { pubcheck: { metadataMatches: boolean } } }).result.pubcheck.metadataMatches, false);
+  const fallback = await client.callTool({ name: "zotero_check_candidate", arguments: { metadata: { itemType: "book", title: "Fallback protocol book",
+    fields: { DOI: "10.1234/stdio", date: "2026" }, creators: [{ creatorType: "author", name: "Tester" }] }, includeCitationCounts: false } });
+  assert(!fallback.isError, JSON.stringify(fallback));
+  const fallbackResult = (fallback.structuredContent as { result: { pubcheckEvidence: { status: string };
+    referenceFallback: { results: { provider: string; fields: { title: string } }[] } } }).result;
+  assert.equal(fallbackResult.pubcheckEvidence.status, "unavailable");
+  assert.deepEqual(fallbackResult.referenceFallback.results.map(({ provider, fields }) => [provider, fields.title]),
+    [["crossref", "mismatch"], ["openalex", "mismatch"]]);
   const invalid = await client.callTool({ name: "zotero_check_candidate", arguments: { metadata: { itemType: "note", title: "Not a publication" } } });
   assert.equal(invalid.isError, true);
   assert.deepEqual(await readdir(root), []);

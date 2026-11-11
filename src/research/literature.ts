@@ -41,6 +41,7 @@ interface IndexedWork extends Work {
   contentUrls: string[];
   locations: string[];
 }
+type CrossrefLookup = { value: { record: Record<string, unknown>; work: IndexedWork } | null; evidence: ResearchEvidence };
 
 function openAlexWork(data: Record<string, unknown>): IndexedWork {
   const id = /^https:\/\/openalex\.org\/(W\d+)\/?$/i.exec(text(data.id))?.[1]?.toUpperCase();
@@ -142,15 +143,31 @@ function matchesReference(reference: Reference, work: IndexedWork) {
 }
 
 export class Literature {
-  constructor(readonly run: ProviderRun) {}
+  private lastCrossrefDoi?: { doi: string; lookup: Promise<CrossrefLookup> };
 
-  lookup(provider: Index, doi: string) {
-    const url = provider === "openalex"
-      ? new URL(`https://api.openalex.org/works/doi:${encodeURIComponent(doi).replace(/%2F/i, "/")}`)
-      : new URL(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
-    return this.run.json(provider, url, (body) => {
-      const record = requireRecord(body);
-      const work = provider === "openalex" ? openAlexWork(record) : crossrefWork(requireRecord(record.message));
+  constructor(readonly run: ProviderRun, private readonly options: { reuseCrossrefDoi?: boolean } = {}) {}
+
+  crossrefDoi(doi: string): Promise<CrossrefLookup> {
+    if (this.lastCrossrefDoi?.doi === doi) return this.lastCrossrefDoi.lookup;
+    const url = new URL(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
+    const lookup = this.run.json("crossref", url, (body) => {
+      const record = requireRecord(requireRecord(body).message);
+      const work = crossrefWork(record);
+      if (work.doi !== doi) throw new ResearchFailure("mismatch", "Crossref returned a different DOI.");
+      return { record, work };
+    });
+    if (this.options.reuseCrossrefDoi) this.lastCrossrefDoi = { doi, lookup };
+    return lookup;
+  }
+
+  async lookup(provider: Index, doi: string) {
+    if (provider === "crossref") {
+      const { value, evidence: source } = await this.crossrefDoi(doi);
+      return { value: value?.work ?? null, evidence: source };
+    }
+    const url = new URL(`https://api.openalex.org/works/doi:${encodeURIComponent(doi).replace(/%2F/i, "/")}`);
+    return this.run.json("openalex", url, (body) => {
+      const work = openAlexWork(requireRecord(body));
       if (work.doi !== doi) throw new ResearchFailure(work.doi ? "mismatch" : "incomplete", "The provider did not return the requested DOI.");
       return work;
     });

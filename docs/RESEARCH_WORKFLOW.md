@@ -24,8 +24,9 @@ Recherche, bibliografische Prüfung und Übernahme sind separate Schritte.
    je Eintrag zuerst bei PubCheck und danach bei beiden Indizes. Bei PubCheck-Ausfall
    vergleicht es zusätzlich vorhandene LaTeX-Zitierschlüssel mit der .bib.
    Für Rückzugswarnungen und die Prüfung vor dem Import weiterhin
-   `zotero_check_sources` oder `zotero_check_candidate` verwenden. Die ursprünglichen
-   Referenzdaten zur Prüfung übergeben und Korrekturen kenntlich machen.
+   `zotero_check_sources` oder `zotero_check_candidate` verwenden. Bei PubCheck-Ausfall
+   oder Fehltreffer greifen beide Werkzeuge auf dieselbe Einzelprüfung zurück.
+   Die ursprünglichen Referenzdaten zur Prüfung übergeben und Korrekturen kenntlich machen.
    `zotero_get_citations` liefert Zähler und zitierende Arbeiten aus OpenAlex
    und greift bei Bedarf auf den verfügbaren Crossref-Zähler zurück.
 5. **Ergebnis einordnen.** Bestätigte bibliografische Angaben (`VERIFIED` und
@@ -35,10 +36,10 @@ Recherche, bibliografische Prüfung und Übernahme sind separate Schritte.
    erneut prüfen. `RETRACTED` sperrt die Verwendung als unbeanstandeten Beleg;
    PubPeer-Kommentare sind Zusatzhinweise, die nach Inhalt zu beurteilen sind, und
    allein kein Ablehnungsgrund. Eine ausdrücklich beauftragte Untersuchung zurückgezogener Arbeiten ist ein
-   gesonderter Anwendungsfall. `NOT_FOUND`, `UNVERIFIABLE`, `ERROR`, ungültige
-   Kennungen oder ein unvollständiger Vergleich bedeuten **ungeklärt**. Nicht als
-   erfunden ausgeben und nicht stillschweigend übernehmen. Bestehende Zotero-Quellen
-   werden bei einem negativen Prüfergebnis nicht automatisch gelöscht.
+   gesonderter Anwendungsfall. Bei `NOT_FOUND` oder `ERROR` den Feldvergleich
+   aus `referenceFallback` heranziehen. Die Rückzugsprüfung bleibt bei einem
+   PubCheck-Ausfall offen. Ungültige Kennungen und unvollständige Vergleiche
+   als ungeklärt ausweisen.
 6. **Inhalt und Eignung bewerten.** `zotero_get_fulltext` versucht zuerst
    OpenAlex-PDF, XML und verlinkte Open-Access-Kopien. Danach öffnet es die
    Publikationsseite über die vorhandene DOI. Fehlt die DOI, sucht es in Crossref

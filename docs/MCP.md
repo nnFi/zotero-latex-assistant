@@ -344,11 +344,8 @@ Notizen, Abstracts, Tags und Zitierschlüssel können in den übergebenen Metada
 stehen, werden aber nicht an die Prüfdienste gesendet. Anhänge/Notizen/Annotationen
 sind keine bibliografischen Kandidaten und werden vor externen Anfragen abgewiesen.
 
-Der neue Einstieg liefert `metadata`, `pubcheck`, `citations` und `guidance`.
-Die Nachweise, Statuswerte, Vergleiche und DOI-/ISBN-Zitationsabfragen sind dieselben
-wie bei gespeicherten Quellen. Er erfindet keine Zotero-Keys oder Versionen und
-meldet `zoteroChanged:false`, `projectFilesChanged:false`, `contentVerified:false`.
-Eine Prüfung legt keine Quelle an; die Übernahme bleibt eine separate Aktion.
+Kandidaten liefern die Eingabemetadaten unter `metadata` und dieselben Prüfnachweise
+wie gespeicherte Quellen. Für eine Übernahme ist ein eigener Auftrag nötig.
 
 Für alle Quellen mit `{"limit":5,"offset":0}` beginnen und mit dem zurückgegebenen
 `nextOffset` fortsetzen, bis es `null` ist. Pro Aufruf sind höchstens zehn Quellen
@@ -363,6 +360,11 @@ Jedes Ergebnis enthält `itemKey`, `title`, die gelesene Zotero-Version und:
 - `pubcheck.metadataMatches`: `true` nur bei positivem Vergleich des Titels und
   aller übermittelten bibliografischen Vergleichsfelder; `false` bei gemeldeten
   Abweichungen; sonst `null`. Ein aufgelöster DOI allein bestätigt keine Metadaten.
+- `pubcheckEvidence` zeigt den Status des PubCheck-Abrufs. Bei Ausfall oder
+  `NOT_FOUND` vergleicht `referenceFallback` die ursprünglichen Angaben zu Titel,
+  Autoren und Jahr. Mit DOI beginnt die Prüfung bei Crossref, sonst bei OpenAlex.
+  Der Fallback kann einen Metadatenabgleich liefern, während die Rückzugsprüfung
+  bei PubCheck-Ausfall offenbleibt.
 - `citations.count`: Zitationen durch andere Publikationen, separat aus Crossrefs
   `is-referenced-by-count`, mit DOI, ISBN, Anbieter, Herkunfts-URL, Abrufzeitpunkt
   und `matchedBy` (`doi`, `isbn` oder bei ungeklärter Zuordnung `null`). Eine
@@ -383,7 +385,7 @@ ISBN und `unsupported-type` einen Quellentyp, der über die ISBN nur auf ein
 addiert. Unvollständige Kandidaten oder Suchergebnisse ergeben `unavailable`.
 ISBNs/Ausgaben mit verschiedenen passenden DOI werden nicht zusammengefasst.
 Die Suche prüft höchstens fünf ISBN-Identitäten und ihre ISBN-10-Entsprechungen,
-100 Treffer pro Seite, höchstens 500 pro Filter und insgesamt zwölf Anfragen
+100 Treffer pro Seite, höchstens 500 pro Filter und insgesamt zwölf Suchschritte
 innerhalb von 20 Sekunden. Bei überschrittenen Grenzen bleibt die Zahl unbekannt;
 ein Treffer aus einer unvollständigen Suche wird nicht als eindeutig ausgegeben.
 Der MCP ergänzt eine gefundene DOI nicht automatisch in Zotero.
@@ -397,7 +399,7 @@ kommaseparierte Liste konnten daher `NOT_FOUND` auslösen, obwohl der richtige
 DOI-Datensatz existiert. Der MCP verwendet jetzt eine gültige DOI als primäre
 PubCheck-Kennung und prüft **alle** angegebenen ISBNs separat gegen die ISBN-Liste
 auf genau dieser Crossref-DOI. Derselbe DOI-Abruf wird innerhalb einer Prüfung für
-ISBN-Abgleich und Zitationszählung gemeinsam verwendet.
+ISBN-Abgleich, Zitationszählung und Metadaten-Fallback gemeinsam verwendet.
 
 `pubcheck.isbnValidation` zeigt die normalisierten `isbns`, Anbieter, Herkunfts-URL,
 Grund und Status (`matched`, `unconfirmed`, `invalid`, `unavailable`). Nur wenn
@@ -429,9 +431,11 @@ Fehler der beiden Dienste werden unabhängig pro Quelle gemeldet. Die Funktion
 Richtigkeit oder Unterstützung konkreter Aussagen (`contentVerified:false`).
 Titelsuchen ohne DOI sind näherungsweise und brauchen menschliche Prüfung.
 
-Nur nach beauftragter externer Quellenprüfung verwenden: Titel, Autoren, Jahr,
-Publikationsort und DOI/ISBN werden an PubCheck übermittelt, DOI oder ISBN zusätzlich an
-Crossref. Notizen, Abstracts, PDFs und LaTeX-Inhalte werden nicht übertragen.
+Bei einer beauftragten externen Quellenprüfung erhält PubCheck Titel, Autoren,
+Jahr, Publikationsort und DOI oder ISBN. Crossref und OpenAlex erhalten für den
+Fallback die DOI oder die benötigten Suchangaben. Vorübergehende Dienstfehler
+werden einmal wiederholt. Ein weiterhin ausgefallener Dienst wird für die
+restlichen Quellen desselben Aufrufs übersprungen.
 Verwendet wird PubChecks öffentliche, unversionierte Browser-Schnittstelle
 `https://pubcheck.net/api/browser/lookup`; Änderungen daran können die Prüfung
 vorübergehend verhindern und werden als Fehler gemeldet. Beschreibungen:

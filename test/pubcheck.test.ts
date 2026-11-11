@@ -19,17 +19,18 @@ data: { publicationTitle: "Test Journal", abstractNote: "PRIVATE ABSTRACT", extr
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 function fixture() {
-  const control = { verdict: "VERIFIED", compared: ["title", "authors", "year", "journal", "doi"], uncompared: [] as string[], pubcheckError: false,
+  const control = { verdict: "VERIFIED", compared: ["title", "authors", "year", "journal", "doi"], uncompared: [] as string[], pubcheckError: false, pubcheckFailures: 0,
     pubcheckStatus: 200, crossrefStatus: 200, crossrefError: false, count: 42 as unknown, wrongDoi: false, wrongTitle: false, wrongCountDoi: false, malformed: false,
     isbnRecords: [] as Record<string, unknown>[], isbnResponse: undefined as unknown, isbn10Only: false,
     registeredIsbns: undefined as unknown, isbnOverridesDoi: false };
   const calls: { url: URL; init: RequestInit | undefined }[] = [];
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(String(input)); calls.push({ url, init });
-    assert.equal(init?.redirect, "error"); assert(init?.signal);
+    assert.equal(init?.redirect, url.hostname === "api.openalex.org" ? "manual" : "error"); assert(init?.signal);
     if (url.hostname === "pubcheck.net") {
       assert.equal(url.pathname, "/api/browser/lookup"); assert.equal(init?.method, "POST");
       if (control.pubcheckError) throw new Error("PubCheck offline");
+      if (control.pubcheckFailures > 0) { control.pubcheckFailures--; return json({}, 503); }
       if (control.malformed) return json({ verification: { verdict: "NEW_STATUS" } });
       const query = JSON.parse(String(init.body)).query as string;
       assert(!query.includes("PRIVATE"));
@@ -42,6 +43,11 @@ function fixture() {
         resolved: { ...citation, doi: control.wrongDoi ? "10.1234/other" : citation.doi, source: "crossref" } },
         retraction_snapshot: { snapshot_id: "fixture", freshness: { status: "fresh" } }, warnings: [] }, control.pubcheckStatus);
     }
+    if (url.hostname === "api.openalex.org") {
+      const work = { id: "https://openalex.org/W123", doi: "https://doi.org/10.1234/test", title: detail.item.title,
+        authorships: [{ author: { display_name: "Ada Lovelace" } }], publication_year: 2026 };
+      return json(url.pathname === "/works" ? { results: [work] } : work);
+    }
     assert.equal(url.hostname, "api.crossref.org");
     if (control.crossrefError) throw new Error("Crossref offline");
     if (url.searchParams.has("filter")) {
@@ -52,8 +58,10 @@ function fixture() {
       const offset = Number(url.searchParams.get("offset"));
       return json({ message: { "total-results": records.length, items: records.slice(offset, offset + 100) } }, control.crossrefStatus);
     }
-    return json({ message: { DOI: control.wrongCountDoi ? "10.1234/other" : "10.1234/test", ISBN: control.registeredIsbns,
-      "is-referenced-by-count": control.count, "references-count": 999 } }, control.crossrefStatus);
+    const work = { DOI: control.wrongCountDoi ? "10.1234/other" : "10.1234/test", ISBN: control.registeredIsbns,
+      title: [detail.item.title], author: [{ given: "Ada", family: "Lovelace" }], issued: { "date-parts": [[2026]] },
+      "is-referenced-by-count": control.count, "references-count": 999 };
+    return json({ message: url.pathname === "/works" ? { items: [work] } : work }, control.crossrefStatus);
   };
   return { client: new PubcheckClient(fetch), control, calls, fetch };
 }
@@ -62,6 +70,7 @@ test("PubCheck compares bibliographic metadata; citation counts use Crossref inb
   const f = fixture(); const result = await f.client.check(detail);
   assert.equal(result.itemKey, detail.item.key); assert.equal(result.version, 7);
   assert.equal(result.pubcheck.verdict, "VERIFIED"); assert.equal(result.pubcheck.metadataMatches, true);
+  assert.equal(result.referenceFallback, null);
   assert.equal(result.pubcheck.contentVerified, false);
   assert.equal(result.citations.count, 42); assert.equal(result.citations.status, "available");
   assert.equal(result.citations.provider, "crossref"); assert.equal(result.citations.doi, "10.1234/test");
@@ -176,10 +185,46 @@ test("candidate checks preserve supplied mismatches, report retractions, and do 
     const result = await f.client.checkCandidate(candidate, false);
     assert.equal(result.pubcheck.verdict, verdict); assert.equal(result.pubcheck.metadataMatches, verdict === "METADATA_MISMATCH" ? false : null);
     assert.equal(result.metadata.title, candidate.title); assert.equal(result.zoteroChanged, false);
-    assert.equal(JSON.parse(String(f.calls.at(-1)!.init?.body)).query.includes(candidate.title), true);
+    const submitted = f.calls.filter(({ url }) => url.hostname === "pubcheck.net").at(-1);
+    assert.equal(JSON.parse(String(submitted?.init?.body)).query.includes(candidate.title), true);
+    if (["RETRACTED", "METADATA_MISMATCH"].includes(verdict)) assert.equal(result.referenceFallback, null);
   }
   f.control.verdict = "VERIFIED"; f.control.compared = ["doi"];
   assert.equal((await f.client.checkCandidate(candidate, false)).pubcheck.metadataMatches, null);
+});
+
+test("candidate fallback retries PubCheck and reuses the Crossref DOI for the citation count", async () => {
+  const f = fixture();
+  f.control.pubcheckStatus = 503;
+  const result = await f.client.checkCandidate(externalArticle());
+  assert.deepEqual(f.calls.map(({ url }) => url.hostname), ["pubcheck.net", "pubcheck.net", "api.crossref.org", "api.openalex.org"]);
+  assert.equal(result.pubcheck.verdict, "ERROR");
+  assert.equal(result.pubcheck.retractionSnapshot, null);
+  assert.equal(result.pubcheckEvidence.status, "unavailable");
+  assert.deepEqual(result.referenceFallback?.results.map(({ provider, status }) => [provider, status]), [["crossref", "ok"], ["openalex", "ok"]]);
+  assert.equal(f.calls.at(-1)?.url.pathname, "/works/doi:10.1234/test");
+  assert.equal(result.citations.count, 42);
+  assert.equal(result.citations.checkedAt, result.referenceFallback?.results[0]?.checkedAt);
+});
+
+test("a PubCheck miss without DOI checks OpenAlex before Crossref, even with citation counting disabled", async () => {
+  const f = fixture();
+  f.control.verdict = "NOT_FOUND";
+  const result = await f.client.check({ ...detail, item: { ...detail.item, doi: "" } }, false);
+  assert.deepEqual(f.calls.map(({ url }) => url.hostname), ["pubcheck.net", "api.openalex.org", "api.crossref.org"]);
+  assert.equal(f.calls.at(-1)?.url.searchParams.get("query.author"), "Lovelace, Ada");
+  assert.equal(result.pubcheckEvidence.status, "not-found");
+  assert.equal(result.citations.status, "not-requested");
+  assert.deepEqual(result.referenceFallback?.results.map(({ provider, status }) => [provider, status]), [["openalex", "ok"], ["crossref", "ok"]]);
+});
+
+test("a successful PubCheck retry resolves the request without a fallback", async () => {
+  const f = fixture();
+  f.control.pubcheckFailures = 1;
+  const result = await f.client.checkCandidate(externalArticle(), false);
+  assert.deepEqual(f.calls.map(({ url }) => url.hostname), ["pubcheck.net", "pubcheck.net"]);
+  assert.equal(result.pubcheckEvidence.status, "ok");
+  assert.equal(result.referenceFallback, null);
 });
 
 test("candidate PubCheck errors and Crossref errors remain independent with DOI and ISBN inputs", async () => {
@@ -441,6 +486,15 @@ test("project source checks paginate all scoped sources, reject out-of-scope sel
   const last = await service.checkSources(undefined, 2, page.nextOffset!);
   assert.equal(last.results[0]!.itemKey, "ITEM2347"); assert.equal(last.nextOffset, null);
   assert.equal((await service.checkSources(undefined, 2, 3)).results.length, 0);
+  f.control.pubcheckStatus = 503;
+  f.control.crossrefStatus = 503;
+  const beforeOutage = f.calls.length;
+  const fallbackPage = await service.checkSources(undefined, 2, 0, false);
+  assert.deepEqual(f.calls.slice(beforeOutage).map(({ url }) => url.hostname),
+    ["pubcheck.net", "pubcheck.net", "api.crossref.org", "api.crossref.org", "api.openalex.org", "api.openalex.org"]);
+  assert.deepEqual(fallbackPage.results.map((result) => result.pubcheckEvidence.status), ["unavailable", "skipped"]);
+  assert.deepEqual(fallbackPage.results.map((result) => result.referenceFallback?.results.map(({ status }) => status)),
+    [["unavailable", "ok"], ["skipped", "ok"]]);
   const externalCalls = f.calls.length;
   await assert.rejects(service.checkSources(["ITEM2345", "OTHER234"]), /selected project collection/);
   assert.equal(f.calls.length, externalCalls);
