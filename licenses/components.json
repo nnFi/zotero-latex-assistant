@@ -88,5 +88,38 @@
     "file": "json-schema-traverse.txt",
     "source": "https://raw.githubusercontent.com/epoberezkin/json-schema-traverse/v1.0.0/LICENSE",
     "note": "Already bundled into the MCP SDK's JSON Schema validator."
+  },
+  {
+    "name": "parse5",
+    "version": "7.3.0",
+    "license": "MIT",
+    "file": "parse5.txt",
+    "source": "https://github.com/inikulin/parse5/tree/v7.3.0",
+    "installedLicense": "LICENSE"
+  },
+  {
+    "name": "entities",
+    "version": "6.0.1",
+    "license": "BSD-2-Clause",
+    "file": "entities.txt",
+    "source": "https://github.com/fb55/entities/tree/v6.0.1",
+    "installedLicense": "LICENSE"
+  },
+  {
+    "name": "saxes",
+    "version": "6.0.0",
+    "license": "ISC",
+    "file": "saxes.txt",
+    "source": "https://raw.githubusercontent.com/lddubeau/saxes/v6.0.0/LICENSE",
+    "upstreamLicense": true,
+    "note": "The npm tarball omits the license file. This text comes from the matching upstream release tag."
+  },
+  {
+    "name": "xmlchars",
+    "version": "2.2.0",
+    "license": "MIT",
+    "file": "xmlchars.txt",
+    "source": "https://github.com/lddubeau/xmlchars/tree/v2.2.0",
+    "installedLicense": "LICENSE"
   }
 ]

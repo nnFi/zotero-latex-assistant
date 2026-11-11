@@ -1,5 +1,11 @@
 # Changelog
 
+## Unveröffentlicht
+
+- **MCP-Recherche:** OpenAlex mit Crossref-Fallback. Neue Aufrufe prüfen
+  Einzelreferenzen und Literaturverzeichnisse, liefern Zitationsdaten und
+  rufen frei zugängliche Volltexte über OpenAlex, Publikationsseiten und Archive ab.
+
 ## 1.0.0 — 4. November 2026
 
 - **Erweiterungsseite:** Eigener Changelog-Tab und kompakte Detailseite mit

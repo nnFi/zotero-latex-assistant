@@ -27,7 +27,8 @@ import { normalizeIsbn } from "../research/isbn";
 import { importLocalPdf } from "./pdfImport";
 import { createSourceNote, noteContent, sourceNote } from "./notes";
 import { syncCitedBibliography } from "../biblatex/scientificWorkflow";
-import { CrossrefClient } from "../research/crossref";
+import { Literature, publicWork, type Work } from "../research/literature";
+import { ProviderRun, ResearchFailure, type ResearchEvidence } from "../research/providerRun";
 import { bibliographyRecords } from "../biblatex/fields";
 import { assertCollectionDeletionAllowed, collectionSubtree, createProjectCollection } from "./collectionOperations";
 import { setProjectCollection } from "./projectCollection";
@@ -100,8 +101,8 @@ export class ZoteroProjectService {
     return { metadata: input, completeness: metadataCompleteness(input, Object.keys(template)) };
   }
 
-  private async resolveIdentifier(scope: Scope, identifier: string): Promise<IdentifierResult & { completeness: ReturnType<typeof metadataCompleteness> }> {
-    const result = await new IdentifierClient(this.options.fetch ?? globalThis.fetch).lookup(identifier);
+  private async resolveIdentifier(scope: Scope, identifier: string, request?: (url: URL) => Promise<Record<string, unknown> | null>): Promise<IdentifierResult & { completeness: ReturnType<typeof metadataCompleteness> }> {
+    const result = await new IdentifierClient(this.options.fetch ?? globalThis.fetch).lookup(identifier, request);
     const template = await scope.client.itemTemplate(result.metadata.itemType);
     const roles = await scope.client.creatorTypes(result.metadata.itemType);
     const fields: Record<string, string> = {};
@@ -299,6 +300,8 @@ export class ZoteroProjectService {
     return { library, collectionKey: config.collectionKey, total: items.length, offset, items: items.slice(offset, offset + limit) };
   }
 
+  researchRun() { return new ProviderRun(this.options.fetch ?? globalThis.fetch); }
+
   async research(query: string, external: "if-missing" | "always" | "never" = "if-missing", limit = 5) {
     query = query.trim();
     if (!query || query.length > 500 || !Number.isInteger(limit) || limit < 1 || limit > 10) throw new Error("Supply a query and a limit from 1 to 10.");
@@ -315,18 +318,59 @@ export class ZoteroProjectService {
     const externalSearched = external === "always" || (external === "if-missing" && !existing.length && !bibliographyMatches.length);
     const candidates: Awaited<ReturnType<ZoteroProjectService["lookupIdentifier"]>>[] = [];
     const failures: { identifier: string; message: string }[] = [];
+    const openAlexMatches: Work[] = [];
+    const evidence: ResearchEvidence[] = [];
     if (externalSearched) {
-      const identifiers = identifier ? [identifier.value] : [...new Set((await new CrossrefClient(this.options.fetch ?? globalThis.fetch).search(query)).map((candidate) => candidate.doi))].slice(0, limit);
+      const run = this.researchRun();
+      const literature = new Literature(run);
+      let identifiers = identifier ? [identifier.value] : [];
+      if (identifier?.kind !== "isbn") {
+        if (identifier) {
+          const lookup = await literature.lookup("openalex", identifier.value);
+          if (lookup.value?.title) openAlexMatches.push(publicWork(lookup.value));
+          evidence.push(lookup.value && !lookup.value.title
+            ? { ...lookup.evidence, status: "incomplete", reason: "OpenAlex returned a work without a usable title." } : lookup.evidence);
+          if (openAlexMatches.length) identifiers = [];
+        } else {
+          const search = await literature.search("openalex", query, limit);
+          evidence.push(search.evidence);
+          if (search.value) openAlexMatches.push(...search.value.map(publicWork));
+          else {
+            const fallback = await literature.search("crossref", query, limit);
+            evidence.push(fallback.evidence);
+            identifiers = fallback.value?.map((work) => work.id) ?? [];
+          }
+        }
+      }
       for (const value of identifiers) {
-        try { candidates.push(await this.resolveIdentifier(scope, value)); }
-        catch (error) { failures.push({ identifier: value, message: error instanceof Error ? error.message : "Identifier verification failed." }); }
+        const start = evidence.length;
+        try {
+          candidates.push(await this.resolveIdentifier(scope, value, async (url) => {
+            const provider = url.hostname === "api.crossref.org" ? "crossref" : url.hostname === "api.datacite.org" ? "datacite" : "openlibrary";
+            const lookup = await run.json(provider, url, (body) => {
+              if (!isRecord(body)) throw new Error("Invalid identifier response.");
+              return body;
+            });
+            evidence.push(lookup.evidence);
+            if (lookup.evidence.status !== "ok" && lookup.evidence.status !== "not-found") throw new Error(lookup.evidence.reason);
+            return lookup.value;
+          }));
+        }
+        catch (error) {
+          const message = error instanceof Error ? error.message : "Identifier verification failed.";
+          failures.push({ identifier: value, message });
+          const last = evidence.at(-1);
+          if (evidence.length > start && last?.status === "ok") {
+            evidence[evidence.length - 1] = { ...last, status: error instanceof ResearchFailure ? error.status : "incomplete", reason: message };
+          }
+        }
       }
     }
     await this.unchanged(scope);
     return { library: scope.library, collectionKey: scope.config.collectionKey, existingTotal: existing.length, existing: existing.slice(0, limit),
-      bibliographyMatches: bibliographyMatches.slice(0, limit), externalSearched, candidates, failures,
+      bibliographyMatches: bibliographyMatches.slice(0, limit), externalSearched, openAlexMatches, candidates, failures, evidence,
       verification: "identifier-metadata" as const, contentVerified: false as const,
-      guidance: "Reuse suitable existing sources. Provider verification confirms identifier metadata only; inspect the publication before supporting scientific claims. Search and verification do not create sources or import bibliography entries. With an attached project, use zotero_add_to_bibliography for explicitly selected sources or zotero_sync_bibliography for saved LaTeX citations." };
+      guidance: "Reuse suitable existing sources. OpenAlex matches are discovery results. Use zotero_check_reference on the original citation and zotero_get_fulltext before supporting scientific claims. Identifier candidates are metadata previews. Search and verification do not create sources or import bibliography entries." };
   }
 
   async syncBibliography(backend: "native" | "better-biblatex" = "better-biblatex", dryRun = false) {

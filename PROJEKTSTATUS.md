@@ -46,7 +46,7 @@ Stand: 4. November 2026 · Quellversion 1.0.0 · Release vorbereitet
 ## Spätere Erweiterungen
 
 - Architekturdokumentation an den aktuellen Stand anpassen.
-- OpenAlex und Unpaywall nach Prüfung der API-Bedingungen anbinden.
+- Unpaywall nach Prüfung der API-Bedingungen anbinden.
 - PDF-Analyse mit nachvollziehbaren Fundstellen und transparenter Modellanbindung ausbauen.
 - Weitere MCP-Werkzeuge bei Bedarf: bestehende Quellen Sammlungen zuordnen, BibTeX-Import, Editoraktionen und Änderungsprotokoll.
 

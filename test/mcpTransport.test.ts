@@ -22,6 +22,11 @@ const attachment={key:"PDF12345",version:1,data:{itemType:"attachment",parentIte
 globalThis.fetch=async(input,init)=>{
  const u=new URL(String(input)); const p=u.pathname;
  const json=(v,status=200)=>new Response(JSON.stringify(v),{status,headers:h});
+ if(u.hostname==="api.openalex.org") {
+   if(u.searchParams.has("filter")) return json({meta:{count:0},results:[]});
+   return json({id:"https://openalex.org/W123",doi:"https://doi.org/10.1234/stdio",title:"Imported protocol book",publication_year:2026,
+     authorships:[{author:{display_name:"Tester"}}],cited_by_count:0});
+ }
  if(u.hostname==="pubcheck.net") {
    const query=JSON.parse(init.body).query;
    const title=query.match(/\btitle = \{([^}]*)\}/)?.[1]||"";
@@ -131,10 +136,11 @@ test("official MCP client exercises local tools and identifier tools over real b
   }
   const { tools } = await client.listTools();
   assert.equal(client.getServerVersion()?.version, APP_VERSION);
-  assert.equal(tools.length, 34);
+  assert.equal(tools.length, 38);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object"); assert.equal(tool.outputSchema?.type, "object");
-    assert.equal(tool.annotations?.openWorldHint, ["zotero_lookup_identifier", "zotero_import_identifier", "zotero_research", "zotero_check_sources", "zotero_check_candidate"].includes(tool.name));
+    assert.equal(tool.annotations?.openWorldHint, ["zotero_lookup_identifier", "zotero_import_identifier", "zotero_research", "zotero_check_sources",
+      "zotero_check_candidate", "zotero_check_reference", "zotero_check_bibliography", "zotero_get_citations", "zotero_get_fulltext"].includes(tool.name));
   }
   assert.equal(tools.find((tool) => tool.name === "zotero_delete_item")!.annotations!.destructiveHint, true);
   assert.equal(tools.find((tool) => tool.name === "tikz_render")!.annotations!.readOnlyHint, false);
@@ -219,6 +225,17 @@ test("official MCP client exercises local tools and identifier tools over real b
   assert.equal(unchangedKey.version, 13); assert.equal((unchangedKey.item as { citationKey: string }).citationKey, "LegacyExplicit2026");
   const research = await call("zotero_research", { query: "protocol" });
   assert.equal(research.externalSearched, false); assert.equal(research.contentVerified, false);
+  const reference = { doi: "10.1234/stdio", title: "Imported protocol book", authors: ["Tester"], year: 2026 };
+  const checkedReference = await call("zotero_check_reference", reference);
+  assert.deepEqual((checkedReference.results as { provider: string; status: string }[]).map(({ provider, status }) => [provider, status]),
+    [["crossref", "ok"], ["openalex", "ok"]]);
+  const counts = await call("zotero_get_citations", reference);
+  assert.equal((counts.count as { value: number }).value, 0);
+  assert.deepEqual(counts.citing, []);
+  const checkedBib = await call("zotero_check_bibliography", {
+    bibtex: "@book{protocol,title={Imported protocol book},author={Tester},year={2026},doi={10.1234/stdio}}",
+  });
+  assert.equal(checkedBib.status, "checked"); assert.equal(checkedBib.total, 1); assert.equal(checkedBib.citationComparison, null);
   const noteArgs = { library: item.library, itemKey: item.key, content: "Summary & own thoughts", requestId: "stdio-note-request", expectedVersion: 13 };
   const createdNote = await call("zotero_create_note", noteArgs);
   assert.equal(createdNote.status, "created"); assert.equal(createdNote.note, "<p>Summary &amp; own thoughts</p>");

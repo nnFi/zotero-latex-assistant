@@ -9,7 +9,7 @@ Klassische Literaturverwaltung und KI-Unterstützung über den lokalen MCP-Serve
 **Aktueller Stand:** Zotero-Seitenleiste mit Bibliotheken, hierarchischen Sammlungen,
 Projektzuordnung in `.zotero/config.json`, gezieltem BibLaTeX-Import,
 Quellenliste mit Mehrfachauswahl, Einfügen von LaTeX-Zitationen und DOI-/Titelsuche über Crossref.
-Der lokale MCP-Server bietet außerdem 34 Werkzeuge für Lesen, wissenschaftliche Recherche,
+Der lokale MCP-Server bietet außerdem 38 Werkzeuge für Lesen, wissenschaftliche Recherche,
 zitatabhängigen Bib-Import, Notizen, Dublettenprüfung, Quellenaktualisierung,
 bibliografische Neuanlage, Zotero-Papierkorb mit Wiederherstellung, Sammlungsverwaltung und PDF-Weitergabe
 an den Agenten sowie lokales TikZ-Rendering. PDFs aus Zotero werden unverändert

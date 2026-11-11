@@ -38,11 +38,11 @@ async function licenseDocuments(base = root) {
     const text = await read(base, `licenses/${component.file}`);
     if (!text.trim()) throw new Error(`Empty license: ${component.file}`);
     texts.set(component.file, normalize(text));
-    if (!component.installedLicense) continue;
+    if (!component.installedLicense && !component.upstreamLicense) continue;
     const directory = path.join("node_modules", component.name);
     const installed = await json(base, `${directory}/package.json`);
     assertComponent(components, component.name, installed.version);
-    if (normalize(await read(base, `${directory}/${component.installedLicense}`)) !== normalize(text)) {
+    if (component.installedLicense && normalize(await read(base, `${directory}/${component.installedLicense}`)) !== normalize(text)) {
       throw new Error(`Upstream license changed for ${component.name}. Review licenses/${component.file}.`);
     }
     // Preserve upstream NOTICE files if a later package version introduces one.
@@ -61,7 +61,7 @@ async function licenseDocuments(base = root) {
       visited.add(name);
       const installed = await json(base, `node_modules/${name}/package.json`);
       const component = assertComponent(components, name, installed.version);
-      if (!component.installedLicense) throw new Error(`Missing installed license review for ${name}.`);
+      if (!component.installedLicense && !component.upstreamLicense) throw new Error(`Missing installed license review for ${name}.`);
       await dependencies(Object.keys(installed.dependencies ?? {}));
     }
   }

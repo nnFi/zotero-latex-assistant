@@ -263,7 +263,10 @@ im Chat den **Agent-Modus** wählen und die Zotero-Werkzeuge aktivieren.
 [Schritt-für-Schritt-Anleitung](MCP-README.md#vs-code-mit-copilot).
 
 Der Agent kann unter anderem Quellen recherchieren, Notizen bearbeiten,
-Literatur über DOI oder ISBN übernehmen und PDFs erhalten. Mit
+Literatur über DOI oder ISBN übernehmen und PDFs erhalten. Die MCP-Recherche
+nutzt OpenAlex mit Crossref-Fallback. Der Agent kann einzelne Referenzen und
+Literaturverzeichnisse prüfen, Zitationsdaten abrufen und öffentlich verfügbare
+Volltexte über OpenAlex, Publikationsseiten und Repositorien suchen. Mit
 `zotero_check_sources` prüft er Zotero-Quellen bei PubCheck auf passende Literaturangaben
 und Rückzugswarnungen und ruft die Zahl der Zitationen durch andere Publikationen
 separat bei Crossref über DOI oder einen eindeutigen ISBN-Treffer ab. Das prüft bibliografische Angaben, keine wissenschaftlichen
@@ -271,6 +274,7 @@ Aussagen; fehlende Zitationszahlen werden als unbekannt ausgewiesen.
 `zotero_check_candidate` bietet dieselbe Prüfung für recherchierte Quellen vor
 dem Import, auch ohne laufendes Zotero. Dadurch kann die KI widersprüchliche
 Angaben erkennen, bevor sie eine Quelle übernimmt.
+[Recherche und Volltext](docs/RESEARCH_WORKFLOW.md) ·
 [Einrichtung, Freigaben und Beispiele](docs/MCP.md#voraussetzungen-und-einrichtung).
 
 Der MCP kann auch **eigenständig mit Zotero** laufen, ohne VS Code oder

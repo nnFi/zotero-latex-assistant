@@ -22,7 +22,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const controls = { afterAuthorization: undefined as (() => Promise<void>) | undefined,
     afterExport: undefined as (() => Promise<void>) | undefined, lostCreate: false, rejectCreate: false,
     wrongNoteParent: false, failedVerify: false, wrongIdentifier: false, dependency: false, changedServer: false,
-    bbt: false, exportDoi: "" };
+    bbt: false, exportDoi: "", openAlexResults: [] as unknown[] };
   const calls: { url: URL; method: string; body?: string }[] = [];
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -30,6 +30,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
     const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status,
       headers: controls.changedServer ? { ...headers, "Zotero-Server-ID": "db-B" } : headers });
     const key = url.pathname.split("/").at(-1)!;
+    if (url.hostname === "api.openalex.org") return url.pathname === "/works" ? json({ results: controls.openAlexResults }) : json({}, 404);
     if (url.hostname === "api.crossref.org") {
       const message = { DOI: controls.wrongIdentifier ? "10.1234/wrong" : "10.1234/new", type: "journal-article", title: ["New publication"] };
       return json(url.pathname === "/works" ? { message: { items: [message] } } : { message });
@@ -93,7 +94,7 @@ test("research reuses Zotero and bibliography matches before any external reques
   await writeFile(path.join(f.root, "refs.bib"), "@book{manual,title={Manual publication},author={Someone}}\n");
   const manual = await f.service.research("Manual");
   assert.equal(manual.externalSearched, false); assert.equal(manual.bibliographyMatches[0]!.citationKey, "manual");
-  assert(!f.calls.some((call) => call.url.hostname === "api.crossref.org")); assert.equal(f.writes().length, 0);
+  assert(!f.calls.some((call) => ["api.openalex.org", "api.crossref.org"].includes(call.url.hostname))); assert.equal(f.writes().length, 0);
 });
 
 test("standalone Zotero reads need no project, settings, bibliography or state directory", async (t) => {
@@ -269,10 +270,23 @@ test("external title candidates are independently resolved; mismatched identifie
   assert.equal(result.candidates[0]!.identifier.value, "10.1234/new"); assert.equal(result.candidates[0]!.metadata.title, "New publication");
   assert.equal(result.contentVerified, false); assert.equal(result.verification, "identifier-metadata");
   assert.equal(f.calls.filter((call) => call.url.hostname === "api.crossref.org").length, 2);
+  assert.deepEqual(result.evidence.map(({ provider, status }) => [provider, status]),
+    [["openalex", "not-found"], ["crossref", "ok"], ["crossref", "ok"]]);
   f.controls.wrongIdentifier = true;
   const failed = await f.service.research("10.1234/new");
   assert.equal(failed.candidates.length, 0); assert.equal(failed.failures.length, 1);
   assert.equal(await readProjectText(f.root, "refs.bib"), undefined); assert.equal(f.writes().length, 0);
+});
+
+test("OpenAlex research returns works without DOIs and avoids unnecessary Crossref requests", async (t) => {
+  const f = await fixture(t);
+  f.controls.openAlexResults = [{ id: "https://openalex.org/W555", display_name: "A DOI-less paper", cited_by_count: 0 }];
+  const result = await f.service.research("DOI-less");
+  assert.equal(result.openAlexMatches[0]?.id, "W555");
+  assert.equal(result.openAlexMatches[0]?.doi, null);
+  assert.equal(result.openAlexMatches[0]?.sourceUrl, "https://openalex.org/W555");
+  assert.deepEqual(result.candidates, []);
+  assert(!f.calls.some(({ url }) => url.hostname === "api.crossref.org"));
 });
 
 test("explicit research modes preserve local-first order and allow further external research", async (t) => {

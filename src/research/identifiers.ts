@@ -3,6 +3,7 @@ import { normalizeDoi } from "./crossref";
 import { normalizeIsbn } from "./isbn";
 import { isRecord } from "../zotero/validation";
 import { metadataSchema, type SourceMetadata } from "../zotero/metadata";
+import { ResearchFailure } from "./providerRun";
 
 export function normalizeIdentifier(input: string): { kind: "doi" | "isbn"; value: string } {
   return /^(?:10\.|doi:|https?:\/\/(?:dx\.)?doi\.org\/)/i.test(input.trim())
@@ -120,29 +121,29 @@ export class IdentifierClient {
     if (!isRecord(payload)) throw new Error("Invalid metadata response.");
     return payload;
   }
-  async lookup(input: string): Promise<IdentifierResult> {
+  async lookup(input: string, request = (url: URL) => this.request(url)): Promise<IdentifierResult> {
     const identifier = normalizeIdentifier(input);
     if (identifier.kind === "doi") {
       const url = new URL(`https://api.crossref.org/works/${encodeURIComponent(identifier.value)}`);
-      const result = await this.request(url);
+      const result = await request(url);
       let mapped: Pick<IdentifierResult, "metadata" | "warnings">; let provider: IdentifierResult["provider"]; let sourceUrl = url.href;
       if (result) {
         if (!isRecord(result.message)) throw new Error("Invalid Crossref metadata response.");
         mapped = crossrefMetadata(result.message); provider = "crossref";
       } else {
         const fallback = new URL(`https://api.datacite.org/dois/${encodeURIComponent(identifier.value)}`);
-        const result = await this.request(fallback);
+        const result = await request(fallback);
         if (!result) throw new Error("DOI not found at Crossref or DataCite.");
         if (!isRecord(result.data) || !isRecord(result.data.attributes)) throw new Error("Invalid DataCite metadata response.");
         mapped = dataciteMetadata(result.data.attributes); provider = "datacite"; sourceUrl = fallback.href;
       }
-      if (mapped.metadata.fields.DOI !== identifier.value) throw new Error("The returned DOI does not match the requested identifier.");
+      if (mapped.metadata.fields.DOI !== identifier.value) throw new ResearchFailure("mismatch", "The returned DOI does not match the requested identifier.");
       return { identifier, provider, sourceUrl, ...mapped };
     }
     const url = new URL("https://openlibrary.org/api/books");
     const bibkey = `ISBN:${identifier.value}`;
     url.search = new URLSearchParams({ bibkeys: bibkey, format: "json", jscmd: "data" }).toString();
-    const result = await this.request(url);
+    const result = await request(url);
     const data = result?.[bibkey];
     if (!isRecord(data)) throw new Error("ISBN not found at Open Library.");
     const identifiers = isRecord(data.identifiers) ? data.identifiers : {};

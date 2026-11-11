@@ -1,6 +1,6 @@
 # Implementierte MCP-Werkzeuge
 
-Der eigenständige stdio-Einstieg `mcp/server.ts` registriert 34 Werkzeuge (33 Zotero, 1 TikZ) über
+Der eigenständige stdio-Einstieg `mcp/server.ts` registriert 38 Werkzeuge (37 Zotero, 1 TikZ) über
 das offizielle TypeScript-SDK 2.3.1. Die Zotero-Geschäftslogik liegt in
 `src/zotero/projectService.ts`; sie importiert keine VS-Code-API.
 
@@ -18,7 +18,11 @@ das offizielle TypeScript-SDK 2.3.1. Die Zotero-Geschäftslogik liegt in
 | `zotero_get_selected_collection` | Projektbindung und Schreibbereitschaft prüfen |
 | `zotero_set_project_bib_file` | Vorhandene Projekt-.bib erkennen bzw. nach Auswahl eines zurückgegebenen Kandidaten ausdrücklich setzen; ohne Treffer nichts ändern |
 | `zotero_search` | Bibliografische Quellen im ausgewählten Scope durchsuchen |
-| `zotero_research` | Zotero und Projekt-.bib zuerst durchsuchen, danach bei Bedarf neue Identifier-Metadaten mit Herkunft verifizieren |
+| `zotero_research` | Zotero und Projekt-.bib durchsuchen, extern OpenAlex mit Crossref-Fallback |
+| `zotero_check_reference` | Titel, Autoren und Jahr mit Crossref und OpenAlex abgleichen |
+| `zotero_check_bibliography` | PubCheck und Einzelprüfung für Projekt-.bib oder BibTeX, bei Ausfall LaTeX-Zitierschlüssel abgleichen |
+| `zotero_get_citations` | OpenAlex-Zähler und zitierende Arbeiten, verfügbarer Crossref-Zähler im Fallback |
+| `zotero_get_fulltext` | Öffentliche Volltexte über OpenAlex, DOI-Publikationsseite und Archive suchen. Ohne DOI Crossref nach Titel und Erstautor abfragen. |
 | `zotero_check_sources` | Metadaten und Rückzugswarnungen bei PubCheck prüfen; Crossref-Zitationszahl über DOI oder eindeutige ISBN-/Buch-/Kapitelzuordnung abrufen |
 | `zotero_check_candidate` | Neue, noch nicht in Zotero gespeicherte Quelle mit derselben PubCheck-/Zitationsprüfung prüfen; ohne Zotero, Projekt oder Dateischreiben |
 | `zotero_sync_bibliography` | Nur fehlende, ausdrücklich zitierte Quellen aus gespeicherten LaTeX-Dateien automatisch in die .bib übernehmen |

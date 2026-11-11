@@ -15,10 +15,10 @@ async function fixture(t) {
     await copyFile(path.join(root, file), path.join(directory, file));
   }
   await cp(path.join(root, "licenses"), path.join(directory, "licenses"), { recursive: true });
-  for (const component of require("../licenses/components.json").filter((entry) => entry.installedLicense)) {
+  for (const component of require("../licenses/components.json").filter((entry) => entry.installedLicense || entry.upstreamLicense)) {
     const target = path.join(directory, "node_modules", component.name);
     await mkdir(target, { recursive: true });
-    for (const file of ["package.json", component.installedLicense]) {
+    for (const file of ["package.json", component.installedLicense].filter(Boolean)) {
       await copyFile(path.join(root, "node_modules", component.name, file), path.join(target, file));
     }
   }

@@ -438,7 +438,7 @@ vorübergehend verhindern und werden als Fehler gemeldet. Beschreibungen:
 [PubCheck](https://pubcheck.net/about),
 [Crossref-Zitationsmetrik](https://github.com/CrossRef/rest-api-doc/blob/master/api_format.md).
 
-Ein vorgeschlagener Ablauf mit Prüfung vor dem Import und getrennten Entscheidungen
+Der Ablauf mit Prüfung vor dem Import und getrennten Entscheidungen
 für bestätigte, widersprüchliche und ungeklärte Quellen steht im
 [Research-Workflow](RESEARCH_WORKFLOW.md). Die Agentenanweisungen verlangen für
 beauftragte externe Prüfung neuer Kandidaten `zotero_check_candidate` vor der
@@ -447,20 +447,18 @@ nicht technisch erzwungen; Kandidatenprüfung und Import bleiben separate Aufruf
 
 ## Wissenschaftlicher Ablauf, Notizen und Wiederherstellung
 
-Der Server stellt 34 Werkzeuge bereit, davon 33 für Zotero und eines für TikZ. Der wissenschaftliche Ablauf ist in seinen
+Der Server stellt 38 Werkzeuge bereit, davon 37 für Zotero und eines für TikZ. Der wissenschaftliche Ablauf ist in seinen
 Anweisungen verankert und über Recherche-, Prüf- und Bibliografiewerkzeuge ausführbar:
 
 1. `zotero_research` sucht zuerst in der ausgewählten Zotero-Sammlung und der
    konfigurierten Projekt-.bib. Bei lokalen Treffern bleibt die Standardsuche lokal.
    `external: "always"` recherchiert nach dieser Bestandsprüfung weitere Quellen;
    `external: "never"` beschränkt sie ausdrücklich auf den Bestand.
-2. Ohne vorhandene Treffer folgt eine Crossref-Titelsuche. Neue Treffer werden
-   einzeln über ihre DOI mit Crossref/DataCite aufgelöst. Eine eingegebene ISBN
-   wird mit Open Library geprüft. Ergebnisse enthalten Anbieter, Identifier,
-   Herkunfts-URL und Hinweise; nicht verifizierte Kandidaten stehen in `failures`.
-   Das bestätigt bibliografische Identität und Metadaten, keine wissenschaftlichen
-   Aussagen oder Eignung für eine konkrete Behauptung (`contentVerified: false`).
-   Dafür Publikation/PDF und belegbare Fundstellen selbst prüfen.
+2. Extern sucht der MCP zuerst bei OpenAlex und bei Ausfall oder fehlendem
+   verwertbarem Treffer bei Crossref. `openAlexMatches` enthält auch Arbeiten
+   ohne DOI. `candidates` enthält die Metadatenvorschauen aus der Fallback-Suche
+   oder der direkten ISBN-Auflösung bei Open Library. `evidence` gibt je Dienst
+   Herkunft und Status an. Fehler bei der Identifier-Auflösung stehen in `failures`.
 3. Neue Kandidaten mit `zotero_check_candidate` vor einer Übernahme prüfen;
    vorhandene Zotero-Quellen mit `zotero_check_sources`. Widersprüchliche Angaben
    und Rückzugswarnungen aus der normalen Belegauswahl ausschließen; fehlende,
@@ -480,6 +478,37 @@ Anweisungen verankert und über Recherche-, Prüf- und Bibliografiewerkzeuge aus
 ```json
 {"query":"Publikationstitel","external":"if-missing","limit":5}
 ```
+
+### Recherche, Referenzen, Zitationen und Volltext
+
+| Werkzeug | Eingabe und Ergebnis |
+| --- | --- |
+| `zotero_check_reference` | `doi` oder `title` und `authors`, möglichst mit `year`. `authors` ist in der Reihenfolge der Referenz angegeben, etwa `["Lovelace, Ada", "Babbage, Charles"]`. Mit DOI prüft Crossref zuerst, ohne DOI OpenAlex. Die Ergebnisse enthalten je Dienst die beobachteten Daten und den Feldvergleich. |
+| `zotero_check_bibliography` | Im Projekt optional `projectPath` und `bibFile` verwenden. Alternativ `bibtex` und optional `latex` übergeben. Je Eintrag zuerst PubCheck, dann beide Referenzindizes. `nextToken` innerhalb von 30 Minuten als einzigen Parameter der nächsten Anfrage senden. Bei PubCheck-Ausfall steht der lokale Zitierschlüsselabgleich in `citationComparison`. Bei mehrdeutiger Dateiauswahl stehen die Dateipfade in `candidates`. |
+| `zotero_get_citations` | Dieselben Referenzfelder, optional `page` (Standard 1) und `limit` (Standard 20, maximal 100). `nextPage` führt durch die zitierenden Arbeiten. OpenAlex-Seiten reichen bis zu den ersten 10.000 Ergebnissen. Bei fehlenden OpenAlex-Zitationsdaten enthält `counts` auch den verfügbaren Crossref-Zähler. Jede Zahl nennt Anbieter, Herkunft und Abrufzeit. |
+| `zotero_get_fulltext` | Dieselben Referenzfelder. Reihenfolge OpenAlex-Kopien, DOI-Publikationsseite, verlinkte Archive, DBLP und Zenodo. Ohne DOI und ohne OpenAlex-Volltext sucht Crossref mit Titel und Erstautor nach einer eindeutigen DOI. `document` enthält die abgerufene Fassung und ihre Herkunft. |
+
+`unavailable`, `not-found`, `mismatch`, `incomplete` und `skipped` unterscheiden
+Dienstfehler, Fehltreffer, Abweichungen, offene Angaben und übersprungene Aufrufe.
+Bei einem vorübergehenden Fehler gibt es einen kurzen Wiederholungsversuch.
+Eine längere vom Dienst verlangte Wartezeit führt direkt zum Fallback. Ein
+weiterhin ausgefallener Dienst wird in diesem Durchgang übersprungen.
+
+Mit `OPENALEX_API_KEY` in der Prozessumgebung stehen die von OpenAlex selbst
+bereitgestellten PDF- und TEI-XML-Downloads zur Verfügung. Die Metadatensuche
+und verlinkte Open-Access-Kopien funktionieren auch ohne Schlüssel im Rahmen
+der öffentlichen Limits. Der Schlüssel geht ausschließlich an OpenAlex.
+[OpenAlex-Authentifizierung](https://help.openalex.org/api/authentication/) ·
+[OpenAlex-Volltext](https://help.openalex.org/access/fulltext/)
+
+PDFs bis 5 MiB werden als eingebettete MCP-Ressource übergeben. Größere PDFs bis
+40 MiB liegen als temporäre Datei auf dem Rechner des MCP. XML und HTML werden
+als Text mit Abschnittsüberschriften ausgegeben, bei mehr als 128 KiB über eine
+temporäre Textdatei. HTML und XML werden bis 8 MiB eingelesen. Beim Lesen
+die belegende Seite oder den Abschnitt erfassen. Bei einem Abstract oder
+`status: "unresolved"` bleibt die inhaltliche Prüfung offen.
+
+### Bibliografie aus LaTeX-Zitaten ergänzen
 
 Aufruf von `zotero_sync_bibliography`:
 

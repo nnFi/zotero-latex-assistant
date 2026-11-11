@@ -208,6 +208,13 @@ Danach beispielsweise:
 
 > Nutze meine Sammlung Bachelorarbeit und recherchiere Quellen zum Thema X. Prüfe neue Kandidaten mit PubCheck vor dem Import. Stelle widersprüchliche und ungeklärte Quellen mit Begründung zurück.
 
+> Prüfe das Literaturverzeichnis meines LaTeX-Projekts. Rufe den Volltext der Arbeiten zu Frage X ab und nenne für jeden Beleg die Seite oder den Abschnitt.
+
+Der [Recherche-Workflow](docs/RESEARCH_WORKFLOW.md) beschreibt die Reihenfolge
+für OpenAlex, Crossref und PubCheck sowie den Volltextabruf. Ein
+`OPENALEX_API_KEY` in der Umgebung des Servers schaltet zusätzlich OpenAlex-PDF
+und -XML frei.
+
 Für die Literaturdatei:
 
 > Verwende den geöffneten Schreibprojektordner, prüfe seine Zotero-Konfiguration und ergänze diese Quellen in der vorhandenen .bib. Verwende den nativen Zotero-Export, falls Better BibTeX fehlt.
